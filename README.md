@@ -1,20 +1,20 @@
-# HyenaDepth
+# JEPADepth
 
 
 ## Introduction
-This is the implementation of the paper called "*HyenaDepth: Some Title Here*".
+This is the implementation of the paper called "*JEPADepth: Some Title Here*".
 <br />
 <br />
-![img.png](assets/HyenaDepth_architecture.png)
+![img.png](assets/JEPADepth_architecture.png)
 
 If you find our work useful in your research please consider citing our paper:
 
 ```
 @article{grigore2026hyenadepth,
-  title={HyenaDepth: Some Title Here},
+  title={JEPADepth: Some Title Here},
   author={Grigore, Ionuț and Popa, Călin-Adrian},
   journal={arXiv preprint arXiv:...},
-  year={2024}
+  year={2026}
 }
 ```
 
@@ -41,16 +41,14 @@ this:
 conda install cuda -c nvidia
 ```
 
-In the end the goal is to be able to install `mamba-ssm` package but we'll do this in the following steps.
-
-First create a conda environment called **hyenadepth**:
+First create a conda environment called **jepadepth**:
 ```bash
-conda create -n hyenadepth  python=3.10  
+conda create -n jepadepth  python=3.10  
 ```
 
 Activate the new enviroment:
 ```bash
-conda activate hyenadepth
+conda activate jepadepth
 ```
 
 After that, run the following:
@@ -64,16 +62,10 @@ pip install -e . && pip install -e ".[dev]"
 
 Recommended to install the `[dev]` dependencies.
 
-Sanity test: enter python command-line interface and run:
-```bash
-import torch
-import mamba_ssm
-```
-
 ## KITTI training data
 You can download the entire [raw KITTI dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php) by running:
 ```bash
-wget -i src/data/kitti/kitti_archives_to_download.txt -P src/data/kitti/kitti_data/
+wget -i data/kitti/kitti_archives_to_download.txt -P data/kitti/kitti_data/
 ```
 The **'-i'** option in wget stands for "input-file". <br />
 This option specifies a file that contains a list of URLs to download.  <br />
@@ -89,9 +81,9 @@ In this case, the files are being downloaded to the src/data/kitti/kitti_data/ d
 Then unzip with:
 
 ```bash
-cd src/data/kitti/kitti_data
+cd data/kitti/kitti_data
 unzip "*.zip"
-cd .. # 4 times
+cd .. # 3 times
 ```
 <br />
 
@@ -101,7 +93,7 @@ cd .. # 4 times
 Their default settings expect that you have converted the png images to jpeg with this command, **which also deletes
 the raw KITTI `.png` files**:
 ```bash
-find src/data/kitti/kitti_data/ -name '*.png' | parallel 'convert -quality 92 -sampling-factor 2x2,1x1,1x1 {.}.png {.}.jpg && rm {}'
+find data/kitti/kitti_data/ -name '*.png' | parallel 'convert -quality 92 -sampling-factor 2x2,1x1,1x1 {.}.png {.}.jpg && rm {}'
 ```
 **or** you can skip this conversion step and train from raw png files by adding the flag `--png` when training, at the expense of slower load times.
 
@@ -155,21 +147,16 @@ python -m src.train.trainer
 
 ## Local overfit
 
-The goal was to see if the HyenaDepth architecture could be
-overfit on a small batch of samples—typically one, two, or five images.
-The ability to overfit is a litmus test for model capacity, and visual 
-aids, such as the rendering of predicted depth maps, were instrumental in evaluating 
-the success. If overfitting was achieved with satisfactory visual 
-confirmation, the next logical step involved deploying the entire 
-training pipeline, utilizing the full dataset.
+The goal was to see if the JEPADepth architecture could be overfit on a small batch of samples—typically one, two, or five images.
+The ability to overfit is a litmus test for model capacity, and visual aids, such as the rendering of predicted depth maps, were instrumental in evaluating the success. 
+If overfitting was achieved with satisfactory visual confirmation, the next logical step involved deploying the entire training pipeline, utilizing the full dataset.
 ```bash
 python -m src.overfit.local_trainer
 ```
 
 ## Jupyter notebooks
 
-You can also find some useful jupyter notebooks which have the purpose of illustrating the functionality of main parts
-of this project.
+You can also find some useful jupyter notebooks which have the purpose of illustrating the functionality of main parts of this project.
 
 ## Contact us
 

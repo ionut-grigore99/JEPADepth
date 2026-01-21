@@ -1,6 +1,3 @@
-Încearcă AI direct în aplicațiile preferate … 
-Folosește Gemini pentru a genera schițe și a rafina conținut și beneficiază de Gemini Pro cu acces la AI de ultimă generație de la Google la 109,99 RON 13,99 RON pentru 3 luni (preț personalizat)
-
 import numpy as np
 import torch
 import torch.nn as nn

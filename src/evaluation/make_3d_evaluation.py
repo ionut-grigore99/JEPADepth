@@ -1,6 +1,3 @@
-Încearcă AI direct în aplicațiile preferate … 
-Folosește Gemini pentru a genera schițe și a rafina conținut și beneficiază de Gemini Pro cu acces la AI de ultimă generație de la Google la 109,99 RON 13,99 RON pentru 3 luni (preț personalizat)
-
 from __future__ import absolute_import, division, print_function
 
 import os
@@ -14,14 +11,8 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from pytorch_model_summary import summary as psummary
 
-from ..utils import readlines, count_parameters
-from ..models.SQLDepth import SQLdepth
-from src.utils import disp_to_depth
-from ..models.mamba.MambaDepthBot import get_mambaDepth_bot_model
-from ..models.mamba.MambaDepthEnc import get_mambaDepth_enc_model
-from ..models.monodepth2.MonoDepth2 import MonoDepth2EncoderDecoder
-from ..models.exp2 import VMUNet
-from ..config.conf import MambaDepthBot_320x1024_Conf, MambaDepthEnc_320x1024_Conf, ConvNeXtLarge_320x1024_Conf, Effb5_320x1024_Conf, ResNet50_320x1024_Conf, ResNet50_192x640_Conf
+from src.utils import disp_to_depth, readlines, count_parameters
+from src.config.conf import MambaDepthEnc_320x1024_Conf
 
 cv2.setNumThreads(0)  # This speeds up evaluation 5x on our unix systems (OpenCV 3.3.1)
 

@@ -11,20 +11,13 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from pytorch_model_summary import summary
 
-from ..config.conf import MambaDepthBot_320x1024_Conf, MambaDepthEnc_320x1024_Conf, TrainConf
-from ..models.mamba.MambaDepthBot import MambaDepthBot, get_mambaDepth_bot_model
-from ..models.mamba.MambaDepthEnc import MambaDepthEnc, get_mambaDepth_enc_model
-from ..models.posenet.pose_cnn import PoseCNN
-from ..models.posenet.pose_cnn_monodepth2 import MonoDepth2PoseCNN, ResnetEncoder, PoseDecoder
-from ..models.exp7 import VMUNet
-from ..models.monodepth2.MonoDepth2 import MonoDepth2EncoderDecoder
-from ..models.models import ModelsWrapper
-from ..datasets.kitti_dataset import KITTIRAWDataset, KITTIOdomDataset
-from ..utils import *
-from ..models.layers import *
-from ..losses.loss import *
-from ..data.kitti.kitti_utils.kitti_utils import *
-
+from src.config.conf import TrainConf
+from src.models.posenet.pose_cnn import PoseCNN
+from src.models.posenet.pose_cnn_monodepth2 import MonoDepth2PoseCNN, ResnetEncoder, PoseDecoder
+from src.datasets.kitti_dataset import KITTIRAWDataset, KITTIOdomDataset
+from src.losses.loss import *
+from src.utils import *
+from data.kitti.kitti_utils.kitti_utils import *
 
 class Trainer:
     def __init__(self, conf):
@@ -512,7 +505,7 @@ if __name__ == "__main__":
 
     lt.monkey_patch()
 
-    conf = TrainConf().conf  # MambaDepthBot_320x1024_Conf, MambaDepthEnc_320x1024_Conf
+    conf = TrainConf().conf  
 
     trainer = Trainer(conf)
     trainer.train()

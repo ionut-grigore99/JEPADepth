@@ -1,6 +1,3 @@
-Încearcă AI direct în aplicațiile preferate … 
-Folosește Gemini pentru a genera schițe și a rafina conținut și beneficiază de Gemini Pro cu acces la AI de ultimă generație de la Google la 109,99 RON 13,99 RON pentru 3 luni (preț personalizat)
-
 from __future__ import absolute_import, division, print_function
 
 import os
@@ -17,10 +14,7 @@ from torchvision import transforms
 
 
 from src.utils import disp_to_depth
-from ..models.mamba.MambaDepthBot import get_mambaDepth_bot_model
-from ..models.mamba.MambaDepthEnc import get_mambaDepth_enc_model
-from ..models.mamba.mamba_utils import load_pretrained_weights
-from ..config.conf import MambaDepthBot_320x1024_Conf, MambaDepthEnc_320x1024_Conf
+from src.config.conf import MambaDepthEnc_320x1024_Conf
 
 def test_simple(conf):
     """

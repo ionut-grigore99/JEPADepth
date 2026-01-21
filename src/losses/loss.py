@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
-from ..evaluation.evaluate_depth import compute_errors
+from src.evaluation.evaluate_depth import compute_errors
 
 
 def get_smooth_loss(disp, img):

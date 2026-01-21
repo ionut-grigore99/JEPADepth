@@ -5,8 +5,8 @@ import skimage.transform
 import numpy as np
 import PIL.Image as pil
 
-from ..data.kitti.kitti_utils.kitti_utils import generate_depth_map
-from .mono_dataset import MonoDataset
+from data.kitti.kitti_utils.kitti_utils import generate_depth_map
+from src.datasets.mono_dataset import MonoDataset
 
 
 class KITTIDataset(MonoDataset):
