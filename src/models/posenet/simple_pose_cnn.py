@@ -2,11 +2,14 @@ from __future__ import absolute_import, division, print_function
 
 import torch
 import torch.nn as nn
+import lovely_tensors as lt
+from pytorch_model_summary import summary as psummary
+from torchsummary import summary as tsummary
 
 
-class PoseCNN(nn.Module):
+class SimplePoseCNN(nn.Module):
     def __init__(self, num_input_frames):
-        super(PoseCNN, self).__init__()
+        super(SimplePoseCNN, self).__init__()
 
         self.num_input_frames = num_input_frames
 
@@ -49,3 +52,20 @@ class PoseCNN(nn.Module):
             self.load_state_dict(filtered_dict_dec)
             self.eval()
 
+if __name__=="__main__":
+    lt.monkey_patch()
+    device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+    model=SimplePoseCNN(num_input_frames=2).to(device)
+    x1=torch.rand(1, 3, 640, 192).to(device)
+    x2=torch.rand(1, 3, 640, 192).to(device)
+    input=torch.cat((x1, x2), dim=1)
+
+    ######## 3 WAYS OF VISUALIZING THE ARCHITECTURE ########
+    #architecture = psummary(model, input, max_depth=4, show_parent_layers=True, print_summary=True)
+    tsummary(model, (6, 640, 192)) # USE WITHOUT BATCH DIMENSION, IT AUTOMATICALLY PUT -1 FOR IT
+    # print(model)
+
+    output=model(input)
+    print("axisangle:", output[0].shape)
+    print("translation:", output[1].shape)

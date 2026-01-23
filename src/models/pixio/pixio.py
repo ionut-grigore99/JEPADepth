@@ -35,6 +35,7 @@ class PixioViT(nn.Module):
     ):
         super().__init__()
         
+        self.embed_dim = embed_dim #@NOTE: added by me
         self.n_cls_tokens = n_cls_tokens
         
         self.patch_embed = PatchEmbed(

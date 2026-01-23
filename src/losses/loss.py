@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
-from src.evaluation.evaluate_depth import compute_errors
+
+from src.evaluation.kitti_evaluation import compute_errors
 
 
 def get_smooth_loss(disp, img):
@@ -54,10 +55,10 @@ def compute_losses(conf, inputs, disp_maps, outputs_dict, ssim):
         else:
             source_scale = 0
 
-        if conf.get('model_name').startswith("mambaDepth"):
-            disp = disp_maps[scale]
+        if conf.get('model_name').startswith("pixio"):
+            disp = disp_maps
         else:
-            disp = disp_maps[("disp", scale)]  # for monodepth2!
+            disp = disp_maps[scale]
         color = inputs[("color", 0, scale)]
         target = inputs[("color", 0, source_scale)]
 

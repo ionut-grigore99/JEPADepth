@@ -12,7 +12,7 @@ from pytorch_model_summary import summary as psummary
 
 from src.utils import disp_to_depth, readlines, count_parameters
 from src.datasets.kitti_dataset import KITTIRAWDataset
-from src.config.conf import MambaDepthEnc_320x1024_Conf
+from src.config.conf import Conf
 
 cv2.setNumThreads(0)  # This speeds up evaluation 5x on our unix systems (OpenCV 3.3.1)
 

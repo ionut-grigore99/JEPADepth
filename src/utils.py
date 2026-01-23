@@ -41,6 +41,7 @@ def sec_to_hm(t):
     m = t % 60
     t //= 60
     return t, m, s
+
 def sec_to_hm_str(t):
     """
         Convert time in seconds to a nice string.
@@ -48,7 +49,6 @@ def sec_to_hm_str(t):
     """
     h, m, s = sec_to_hm(t)
     return "{:02d}h{:02d}m{:02d}s".format(h, m, s)
-
 
 def rot_from_axisangle(vec):
     """
@@ -106,6 +106,7 @@ def get_translation_matrix(translation_vector):
     T[:, :3, 3, None] = t
 
     return T
+
 def transformation_from_parameters(axisangle, translation, invert=False):
     """
         Convert the network's (axisangle, translation) output_images into a 4x4 matrix
@@ -126,70 +127,43 @@ def transformation_from_parameters(axisangle, translation, invert=False):
 
     return M
 
-def predict_poses(conf, models, inputs, features): # in our case we will not use features for this function
+def predict_poses(conf, models, inputs): 
     """
         Predict poses between input frames for monocular sequences.
     """
     outputs = {}
 
-    num_input_frames = len(conf.get('frame_ids_training'))
-    num_pose_frames = 2 if conf.get('pose_model_input') == "pairs" else num_input_frames # in our case we'll have num_pose_frames=2
+    num_input_frames = len(conf['frame_ids_training'])
+    num_pose_frames = 2 if conf['pose_model_input'] == "pairs" else num_input_frames # in our case we'll have num_pose_frames=2
     if num_pose_frames == 2: # In our case we will go through this branch.
-        # In this setting, we compute the pose to each source frame via a
-        # separate forward pass through the pose network.
-
+        # In this setting, we compute the pose to each source frame via a separate forward pass through the pose network.
         # select what features the pose network takes as input
-        if conf.get('pose_model_type') == "shared": 
-            pose_feats = {f_i: features[f_i] for f_i in conf.get('frame_ids_training')}
-        else: # in our case we will go through this case, our pose_model_type is "pose_cnn"
-            pose_feats = {f_i: inputs["color_aug", f_i, 0] for f_i in conf.get('frame_ids_training')} # for each frame it will take the input as scale=0
-
-        for f_i in conf.get('frame_ids_training')[1:]:
+        pose_feats = {f_i: inputs["color_aug", f_i, 0] for f_i in conf['frame_ids_training']} # for each frame it will take the input as scale=0
+        for f_i in conf['frame_ids_training'][1:]:
             if f_i != "s":
                 # To maintain ordering we always pass frames in temporal order
                 if f_i < 0:
                     pose_inputs = [pose_feats[f_i], pose_feats[0]]
                 else:
                     pose_inputs = [pose_feats[0], pose_feats[f_i]]
-                
-                if conf.get('pose_model_type') == "separate_resnet":
-                    pose_inputs = [models["pose_cnn_encoder"](torch.cat(pose_inputs, 1))]
-                elif conf.get('pose_model_type') == "posecnn":
-                    pose_inputs = torch.cat(pose_inputs, 1)
 
-
-                if conf.get('pose_model_type') == "separate_resnet":
-                    axisangle, translation = models["pose_cnn_decoder"](pose_inputs)  
-                else:
-                    axisangle, translation = models["pose_cnn"](pose_inputs)  
-                outputs[("axisangle", 0, f_i)] = axisangle # axisangle:[12, 1, 1, 3]
-                outputs[("translation", 0, f_i)] = translation # translation:[12, 1, 1, 3]
+                axisangle, translation = models["pose_model"](torch.cat(pose_inputs, 1))
+                outputs[("axisangle", 0, f_i)] = axisangle 
+                outputs[("translation", 0, f_i)] = translation 
 
                 # Invert the matrix if the frame id is negative
                 outputs[("cam_T_cam", 0, f_i)] = transformation_from_parameters(axisangle[:, 0], translation[:, 0], invert=(f_i < 0))
-                # outputs[("cam_T_cam", 0, f_i)]: [12, 4, 4]
-
     else:
         # Here we input all frames to the pose net (and predict all poses) together
-        if conf.get('pose_model_type') in ["separate_resnet", "posecnn"]:
-            pose_inputs = torch.cat([inputs[("color_aug", i, 0)] for i in conf.get('frame_ids_training') if i != "s"], 1)
-
-            if conf.get('pose_model_type') == "separate_resnet":
-                pose_inputs = [models["pose_cnn_encoder"](pose_inputs)]
-
-        elif conf.get('pose_model_type') == "shared":
-            pose_inputs = [features[i] for i in conf.get('frame_ids_training') if i != "s"]
-
-        axisangle, translation = models["pose_cnn_decoder"](pose_inputs)
-
-        for i, f_i in enumerate(conf.get('frame_ids_training')[1:]):
+        pose_inputs = torch.cat([inputs[("color_aug", i, 0)] for i in conf['frame_ids_training'] if i != "s"], 1)
+        axisangle, translation = models["pose_model"](pose_inputs)
+        for i, f_i in enumerate(conf['frame_ids_training'][1:]):
             if f_i != "s":
                 outputs[("axisangle", 0, f_i)] = axisangle
                 outputs[("translation", 0, f_i)] = translation
                 outputs[("cam_T_cam", 0, f_i)] = transformation_from_parameters(axisangle[:, i], translation[:, i])
 
     return outputs
-
 
 def count_parameters(model):
     total_params = 0
@@ -200,8 +174,6 @@ def count_parameters(model):
         total_params+=param
     print(f"Total Trainable Params: {total_params / 1e6}M")
     return total_params
-
-
 
 def get_complexity(model, resolution):
     macs, params = get_model_complexity_info(model, (3, resolution[0], resolution[1]), as_strings=True,

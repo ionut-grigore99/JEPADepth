@@ -1,8 +1,6 @@
-model_name: "mambaDepthEnc_320x1024" # mambaDepthBot_320x1024
-
-
-# model
+# model(s)
 # -----------
+model_name: "pixio" 
 num_input_channels: 3  # number of input channels of the input image(s)
 num_output_channels: 1
 deep_supervision: True # this is basically for creating disparity heads at different scales in the decoder.
@@ -12,22 +10,33 @@ n_conv_per_stage_encoder: [2, 2, 2, 2, 2, 2, 2]
 n_conv_per_stage_decoder: [2, 2, 2, 2, 2, 2]
 conv_kernel_sizes: [[3, 3], [3, 3], [3, 3], [3, 3], [3, 3], [3, 3], [3, 3]]
 pool_op_kernel_sizes: [[1, 1], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]]
+pose_cnn_weights_path: null
+monodepth2_pose_cnn_weights_path: null
+pixio:
+  encoder: "pixio_vith16" # choices=["pixio_vitb16", "pixio_vitl16", "pixio_vith16", "pixio_vit1b16", "pixio_vit5b16"]
+  pretrained_ckp: null
+resnet_pose_cnn:
+  num_layers: 18
+  pretrained: True
+  num_input_images: 2
+  num_input_features: 1
+  num_frames_to_predict_for: 2
 
 
 # misc
 # -----------
-data_path: '/data/disertatie/kitti'
-tensorboard_path: '/data/disertatie/MambaDepth/src/tensorboard'
-pretrained_models_folder: '/data/disertatie/MambaDepth/src/tensorboard/train/mambaDepthBot_320x1024/20240201-214842/models/weights_epoch_7'
-image_path_inference: '/data/disertatie/MambaDepth/src/inference/input_images/img1.png'
+data_path: '/data/backup_gpu2/home/ionut/JEPADepth/data/kitti/kitti_data'
+tensorboard_path: '/data/backup_gpu2/home/ionut/JEPADepth/tensorboard'
+pretrained_models_folder: '/data/backup_gpu2/home/ionut/JEPADepth/src/tensorboard/train/...'
+image_path_inference: '/data/backup_gpu2/home/ionut/JEPADepth/src/inference/input_images/img1.png'
                      # I can also give an entire folder with images, not just one image!
-                     # choices: ['/data/disertatie/MambaDepth/src/inference/input_images/img1.png',
-                     #          '/data/disertatie/MambaDepth/src/inference/input_images']
+                     # choices: ['/data/backup_gpu2/home/ionut/JEPADepth/src/inference/input_images/img1.png',
+                     #          '/data/backup_gpu2/home/ionut/JEPADepth/src/inference/input_images']
 image_extension_inference: "png"
 use_cuda: True
-device: ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']
-num_workers: 8
-ndevices: 4
+clip_grad_norm: False
+device: 'cuda'
+num_workers: 4
 im_sz: [320, 1024] # [320, 1024], [192, 640] -> H W
 bs: 12
 
@@ -38,16 +47,17 @@ num_epochs: 20 # number of epochs for training.
 training_split: "eigen_zhou" # which training split to use;  choices=["eigen_zhou", "eigen_full", "odom", "benchmark", "cityscapes_preprocessed", "nyu_raw"],
 learning_rate: 0.0001 # 1e-4
 scheduler_step_size: 15 # step size of the scheduler used for training.
+weight_decay: 0.01 # 1e-4
 use_stereo_training: False # if set, uses stereo pair for training.
 frame_ids_training: [0, -1, 1] # frames to use for training (current, previous and next); choices: [0, -1, 1], [0, 1]
 pose_model_input: "pairs" # how many images the pose network gets; choices=["pairs", "all"]
-load_pretrained_model: False # if set, uses pretrained encoder and depth decoder for training (both of them!).
-load_pretrained_pose: False # if set, uses pretrained PoseNet for training.
-train_from_png: True # if set, trains from raw KITTI png files (instead of jpgs).
+load_pretrained_depth_model: False # if set, uses pretrained encoder and depth decoder for training (both of them!).
+load_pretrained_pose_model: False # if set, uses pretrained PoseNet for training.
+train_from_png: False # if set, trains from raw KITTI png files (instead of jpgs).
 use_different_learning_rate: False # if set, uses different learning rate for training.
 save_frequency: 1 # number of epochs between each save.
 log_frequency: 10 # number of batches between each tensorboard log.
-pose_model_type: separate_resnet # choices=["posecnn", "separate_resnet", "shared"]
+pose_model_type: resnet_pose_cnn # choices=["posecnn", "resnet_pose_cnn"]
 models_to_load: ["encoder", "depth", "pose_encoder", "pose"]
 disparity_smoothness_weight: 0.001 # 1e-3
 use_ssim: True # if set, uses SSIM in the loss. This is kinda always True
@@ -55,7 +65,7 @@ monodepthv1_multiscale: False # if set, uses Monodepthv1 multiscale. This is kin
 disable_automasking: False # if set, doesn't do auto-masking.
 use_average_reprojection: False # if set, uses average reprojection loss. We use minimum reprojection loss as described in "Diging into Self-Supervised MDE"
 #NOTE: I should play with the terms below in order to find the right configuration!
-loss_scales: [0, 1, 2, 3] # scales used in the loss; choices: [0]; [0, 1, 2, 3]
+loss_scales: [0] # scales used in the loss; choices: [0]; [0, 1, 2, 3]
 min_depth: 0.1 # 0.01, 0.1
 max_depth: 100.0 # 80.0, 100.0
 

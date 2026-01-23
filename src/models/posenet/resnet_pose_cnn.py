@@ -2,13 +2,15 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.models as models
-import torch.utils.model_zoo as model_zoo
 from torchvision.models.resnet import ResNet18_Weights, ResNet50_Weights
+from collections import OrderedDict
+from pytorch_model_summary import summary as psummary
+from torchsummary import summary as tsummary
 import lovely_tensors as lt
 
 
 class ResNetMultiImageInput(models.ResNet):
-    """Constructs a resnet model with varying number of input images.
+    """Constructs a ResNet model with varying number of input images.
     Adapted from https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
     """
     def __init__(self, block, layers, num_classes=1000, num_input_images=1):
@@ -34,7 +36,7 @@ class ResNetMultiImageInput(models.ResNet):
 def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1):
     """Constructs a ResNet model.
     Args:
-        num_layers (int): Number of resnet layers. Must be 18 or 50
+        num_layers (int): Number of ResNet layers. Must be 18 or 50
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         num_input_images (int): Number of frames stacked as input
     """
@@ -44,8 +46,7 @@ def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1):
     model = ResNetMultiImageInput(block_type, blocks, num_input_images=num_input_images)
 
     if pretrained:
-        #loaded = model_zoo.load_url(models.resnet.model_urls['resnet{}'.format(num_layers)])
-        loaded = torch.utils.model_zoo.load_url(ResNet18_Weights.IMAGENET1K_V1.url)
+        loaded = torch.utils.model_zoo.load_url({18: ResNet18_Weights.IMAGENET1K_V1, 50: ResNet50_Weights.IMAGENET1K_V1}[num_layers].url)
         loaded['conv1.weight'] = torch.cat(
             [loaded['conv1.weight']] * num_input_images, 1) / num_input_images
         model.load_state_dict(loaded)
@@ -53,9 +54,9 @@ def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1):
 
 
 class ResnetEncoder(nn.Module):
-    """Pytorch module for a resnet encoder
+    """Pytorch module for a ResNet encoder
     """
-    def __init__(self, num_layers, pretrained, num_input_images=1):
+    def __init__(self, num_layers, pretrained, num_input_images):
         super(ResnetEncoder, self).__init__()
 
         self.num_ch_enc = np.array([64, 64, 128, 256, 512])
@@ -89,108 +90,6 @@ class ResnetEncoder(nn.Module):
         self.features.append(self.encoder.layer4(self.features[-1]))
 
         return self.features
-    
-    def from_pretrained(self, weights_path, device='cpu'):
-        loaded_dict_dec = torch.load(weights_path, map_location=device)
-        filtered_dict_dec = {k: v for k, v in loaded_dict_dec.items() if k in self.state_dict()}
-        self.load_state_dict(filtered_dict_dec)
-        self.eval()
-
-
-import numpy as np
-import torch
-import torch.nn as nn
-
-from collections import OrderedDict
-
-class ConvBlock(nn.Module):
-    """Layer to perform a convolution followed by ELU
-    """
-    def __init__(self, in_channels, out_channels):
-        super(ConvBlock, self).__init__()
-
-        self.conv = Conv3x3(in_channels, out_channels)
-        self.nonlin = nn.ELU(inplace=True)
-
-    def forward(self, x):
-        out = self.conv(x)
-        out = self.nonlin(out)
-        return out
-
-
-class Conv3x3(nn.Module):
-    """Layer to pad and convolve input
-    """
-    def __init__(self, in_channels, out_channels, use_refl=True):
-        super(Conv3x3, self).__init__()
-
-        if use_refl:
-            self.pad = nn.ReflectionPad2d(1)
-        else:
-            self.pad = nn.ZeroPad2d(1)
-        self.conv = nn.Conv2d(int(in_channels), int(out_channels), 3)
-
-    def forward(self, x):
-        out = self.pad(x)
-        out = self.conv(out)
-        return out
-    
-import torch.nn.functional as F
-
-def upsample(x):
-    """Upsample input tensor by a factor of 2
-    """
-    return F.interpolate(x, scale_factor=2, mode="nearest")
-
-class DepthDecoder(nn.Module):
-    def __init__(self, num_ch_enc, scales=range(4), num_output_channels=1, use_skips=True):
-        super(DepthDecoder, self).__init__()
-
-        self.num_output_channels = num_output_channels
-        self.use_skips = use_skips
-        self.upsample_mode = 'nearest'
-        self.scales = scales
-
-        self.num_ch_enc = num_ch_enc
-        self.num_ch_dec = np.array([16, 32, 64, 128, 256])
-
-        # decoder
-        self.convs = OrderedDict()
-        for i in range(4, -1, -1):
-            # upconv_0
-            num_ch_in = self.num_ch_enc[-1] if i == 4 else self.num_ch_dec[i + 1]
-            num_ch_out = self.num_ch_dec[i]
-            self.convs[("upconv", i, 0)] = ConvBlock(num_ch_in, num_ch_out)
-
-            # upconv_1
-            num_ch_in = self.num_ch_dec[i]
-            if self.use_skips and i > 0:
-                num_ch_in += self.num_ch_enc[i - 1]
-            num_ch_out = self.num_ch_dec[i]
-            self.convs[("upconv", i, 1)] = ConvBlock(num_ch_in, num_ch_out)
-
-        for s in self.scales:
-            self.convs[("dispconv", s)] = Conv3x3(self.num_ch_dec[s], self.num_output_channels)
-
-        self.decoder = nn.ModuleList(list(self.convs.values()))
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, input_features):
-        self.outputs = {}
-
-        # decoder
-        x = input_features[-1]
-        for i in range(4, -1, -1):
-            x = self.convs[("upconv", i, 0)](x)
-            x = [upsample(x)]
-            if self.use_skips and i > 0:
-                x += [input_features[i - 1]]
-            x = torch.cat(x, 1)
-            x = self.convs[("upconv", i, 1)](x)
-            if i in self.scales:
-                self.outputs[("disp", i)] = self.sigmoid(self.convs[("dispconv", i)](x))
-
-        return self.outputs
 
     
 class PoseDecoder(nn.Module):
@@ -240,6 +139,18 @@ class PoseDecoder(nn.Module):
 
         return axisangle, translation
 
+class ResNetPoseCNN(nn.Module):
+    def __init__(self, num_layers, pretrained, num_input_images, num_input_features, num_frames_to_predict_for, stride=1):
+        super(ResNetPoseCNN, self).__init__()
+        self.encoder = ResnetEncoder(num_layers, pretrained, num_input_images)
+        self.decoder = PoseDecoder(num_ch_enc=self.encoder.num_ch_enc, num_input_features=num_input_features, num_frames_to_predict_for=num_frames_to_predict_for, stride=stride)
+
+    def forward(self, x):
+        features = self.encoder(x)
+        axisangle, translation = self.decoder([features])
+        
+        return axisangle, translation 
+
     def from_pretrained(self, weights_path, device='cpu'):
         loaded_dict_dec = torch.load(weights_path, map_location=device)
         filtered_dict_dec = {k: v for k, v in loaded_dict_dec.items() if k in self.state_dict()}
@@ -247,29 +158,27 @@ class PoseDecoder(nn.Module):
         self.eval()
 
 
-class MonoDepth2PoseCNN(nn.Module):
-    def __init__(self):
-        super(MonoDepth2PoseCNN, self).__init__()
-        self.encoder = ResnetEncoder(num_layers=18, pretrained=True, num_input_images=2)
-        self.decoder = PoseDecoder(num_ch_enc=np.array([64, 64, 128, 256, 512]),  num_input_features=1, num_frames_to_predict_for=2)
-
-    def forward(self, x):
-        features = self.encoder(x)
-        axisangle, translation = self.decoder(features)
-        
-        return axisangle, translation 
-
-    def from_pretrained(self):
-        self.encoder.from_pretrained(weights_path='/data/disertatie/MambaDepth/src/pretrained/pose_encoder.pth', device='cuda')
-        self.decoder.from_pretrained(weights_path='/data/disertatie/MambaDepth/src/pretrained/pose.pth', device='cuda')
-
-
 if __name__=="__main__":
 
     lt.monkey_patch()
+    device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
+    num_layers=18
+    pretrained=True
+    num_input_images=2  # Number of images concatenated as input to encoder
+    num_input_features=1  # Number of feature pyramids (1 since concatenated before encoding)
+    num_frames_to_predict_for=2  # Number of relative poses (bidirectional: 0->1 and 1->0)
 
-    model=MonoDepth2PoseCNN()
-    model=model.to('cuda')
-    model.from_pretrained()
+    model=ResNetPoseCNN(num_layers, pretrained, num_input_images, num_input_features, num_frames_to_predict_for).to(device)
+    x1=torch.rand(1, 3, 640, 192).to(device)
+    x2=torch.rand(1, 3, 640, 192).to(device)
+    input=torch.cat((x1, x2), dim=1)
+
+    ######## 2 WAYS OF VISUALIZING THE ARCHITECTURE ########
+    architecture = psummary(model, input, max_depth=4, show_parent_layers=True, print_summary=True)
+    # print(model)
+
+    output=model(input)
+    print("axisangle:", output[0].shape)
+    print("translation:", output[1].shape)
 

@@ -10,7 +10,7 @@ This is the implementation of the paper called "*JEPADepth: Some Title Here*".
 If you find our work useful in your research please consider citing our paper:
 
 ```
-@article{grigore2026hyenadepth,
+@article{grigore2026jepadepth,
   title={JEPADepth: Some Title Here},
   author={Grigore, Ionuț and Popa, Călin-Adrian},
   journal={arXiv preprint arXiv:...},

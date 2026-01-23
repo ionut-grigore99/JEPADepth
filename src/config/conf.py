@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -6,7 +5,7 @@ import yaml
 
 
 @dataclass
-class TrainConf:
+class Conf:
     name: str = 'config.yaml'
 
     def __post_init__(self):
