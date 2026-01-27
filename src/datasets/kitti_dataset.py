@@ -94,3 +94,4 @@ class KITTIOdomDataset(KITTIDataset):
             "image_{}".format(self.side_map[side]),
             f_str)
         return image_path
+    

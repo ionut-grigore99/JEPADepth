@@ -11,8 +11,9 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from pytorch_model_summary import summary as psummary
 
+from src.models.pixio.pixio import DPTDepth
 from src.utils import disp_to_depth, readlines, count_parameters
-from src.config.conf import MambaDepthEnc_320x1024_Conf
+from src.config.conf import Conf
 
 cv2.setNumThreads(0)  # This speeds up evaluation 5x on our unix systems (OpenCV 3.3.1)
 
@@ -42,9 +43,9 @@ def batch_post_process_disparity(l_disp, r_disp):
 
 
 def evaluate(conf):
-
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     main_path="/data/disertatie/make3d/test"
 
@@ -52,30 +53,13 @@ def evaluate(conf):
         test_filenames = f.read().splitlines()
 
 
-    if conf.get('model_name').startswith("mambaDepth"):
-        model = get_mambaDepth_enc_model(conf)
-        model.from_pretrained(weights_path='/data/disertatie/MambaDepth/src/tensorboard/train/mambaDepthEnc_320x1024/20240205-230952/models/weights_epoch_14/depth_encoder_decoder.pth', device='cuda:6')
-        #model.from_pretrained(weights_path='/data/disertatie/MambaDepth/src/tensorboard/train/mambaDepthBot_320x1024/20240206-214227/models/weights_epoch_19/depth_encoder_decoder.pth', device='cuda')
-        #model.from_pretrained(weights_path='/data/disertatie/MambaDepth/src/tensorboard/train/mambaDepthEnc_320x1024/20240207-180812/models/weights_epoch_19/depth_encoder_decoder.pth', device='cuda')
-        #model.from_pretrained(weights_path='/data/disertatie/MambaDepth/src/tensorboard/train/mambaDepthEnc_320x1024/20240209-191013/models/weights_epoch_22/depth_encoder_decoder.pth', device='cuda')
-        #model.from_pretrained(weights_path='/data/disertatie/MambaDepth/src/tensorboard/train/mambaDepthEnc_320x1024/20240210-220346/models/weights_epoch_16/depth_encoder_decoder.pth', device='cuda')
-    elif conf.get('model_name').startswith("monodepth"):
-        model = MonoDepth2EncoderDecoder()
-        #model.from_pretrained(weights_path='/data/disertatie/MambaDepth/src/tensorboard/train/monodepth2/20240213-130024/models/weights_epoch_13/depth_encoder_decoder.pth', device='cuda:6')
-        model.from_pretrained(weights_path='/data/disertatie/MambaDepth/src/tensorboard/train/monodepth2/20240215-091943/models/weights_epoch_6/depth_encoder_decoder.pth', device='cuda:6')
-    elif conf.get('model_name').startswith('vmunet'):
-        model = VMUNet(
-                        num_classes=1,
-                        input_channels=3,
-                        depths=[2,2,2,2],
-                        depths_decoder=[2,2,2,1],
-                        drop_path_rate=0.2,
-                        load_ckpt_path='/data/disertatie/MambaDepth/src/pretrained/vmamba_small_e238_ema.pth'
-                        )
-        model.load_from()
-        model.from_pretrained(weights_path='/data/disertatie/MambaDepth/src/tensorboard/train/vmunet/20240214-224651/models/weights_epoch_13/depth_encoder_decoder.pth', device='cuda:6')
+    if conf.get('model_name').startswith("pixio"):
+        model = DPTDepth(conf['pixio']['encoder'], conf['pixio']['pretrained_ckp'])
+        model.from_pretrained(weights_path='...', device=device)
+    else:   
+        raise NotImplementedError("Model not implemented for evaluation!")
 
-    model.to('cuda:6')
+    model.to(device)
     model.eval()
 
     depths_gt = []
@@ -125,15 +109,11 @@ def evaluate(conf):
 
 
 
-        # breakpoint()
-
         # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # by me
         # image = image.astype('float32') / 255.0    # by me
 
         # input_color = torch.from_numpy(image)   # by me
         # input_color = input_color.permute(2, 0, 1).unsqueeze(0).to('cuda:6')   # by me
-
-        # breakpoint()
 
         ######################################################## by me
 
@@ -181,14 +161,10 @@ def evaluate(conf):
     # print("\n-> Done!")
 
 
-
-
 if __name__ == "__main__":
 
     lt.monkey_patch()
 
-    conf = MambaDepthEnc_320x1024_Conf().conf  # MambaDepthEnc_320x1024_Conf, MambaDepthBot_320x1024_Conf, ResNet50_320x1024_Conf, ResNet50_192x640_Conf, ConvNeXtLarge_320x1024_Conf, Effb5_320x1024_Conf
-    get = lambda x: conf.get(x)
-
+    conf = Conf().conf
     evaluate(conf)
 

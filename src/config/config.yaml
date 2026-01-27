@@ -1,19 +1,12 @@
-# model(s)
+# models
 # -----------
 model_name: "pixio" 
 num_input_channels: 3  # number of input channels of the input image(s)
 num_output_channels: 1
-deep_supervision: True # this is basically for creating disparity heads at different scales in the decoder.
-unet_base_num_features: 32
-unet_max_num_features: 512
-n_conv_per_stage_encoder: [2, 2, 2, 2, 2, 2, 2]
-n_conv_per_stage_decoder: [2, 2, 2, 2, 2, 2]
-conv_kernel_sizes: [[3, 3], [3, 3], [3, 3], [3, 3], [3, 3], [3, 3], [3, 3]]
-pool_op_kernel_sizes: [[1, 1], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]]
 pose_cnn_weights_path: null
 monodepth2_pose_cnn_weights_path: null
 pixio:
-  encoder: "pixio_vith16" # choices=["pixio_vitb16", "pixio_vitl16", "pixio_vith16", "pixio_vit1b16", "pixio_vit5b16"]
+  encoder: "pixio_vith16" # choices=["pixio_vitb16", "pixio_vitl16", "pixio_vith16"]
   pretrained_ckp: null
 resnet_pose_cnn:
   num_layers: 18
@@ -31,11 +24,10 @@ pretrained_models_folder: '/data/backup_gpu2/home/ionut/JEPADepth/src/tensorboar
 image_path_inference: '/data/backup_gpu2/home/ionut/JEPADepth/src/inference/input_images/img1.png'
                      # I can also give an entire folder with images, not just one image!
                      # choices: ['/data/backup_gpu2/home/ionut/JEPADepth/src/inference/input_images/img1.png',
-                     #          '/data/backup_gpu2/home/ionut/JEPADepth/src/inference/input_images']
+                     #           '/data/backup_gpu2/home/ionut/JEPADepth/src/inference/input_images']
 image_extension_inference: "png"
 use_cuda: True
 clip_grad_norm: False
-device: 'cuda'
 num_workers: 4
 im_sz: [320, 1024] # [320, 1024], [192, 640] -> H W
 bs: 12
