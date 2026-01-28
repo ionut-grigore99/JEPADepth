@@ -25,7 +25,7 @@ def visualize_sample(dataset, sample_idx, split_name, save_path=None):
     fig = plt.figure(figsize=(20, 12), constrained_layout=True)
     gs = gridspec.GridSpec(3, 4, figure=fig, height_ratios=[1, 1, 1])
 
-    fig.suptitle(f'KITTI Dataset Sample - {split_name} (Index: {sample_idx})', fontsize=18, fontweight='bold', y=1.02)
+    fig.suptitle(f'KITTI Dataset Sample - {split_name} split (Index: {sample_idx})', fontsize=18, fontweight='bold', y=1.02)
 
     # === Row 1: Input frames ===
     frame_ids = [0, -1, 1]
@@ -48,7 +48,7 @@ def visualize_sample(dataset, sample_idx, split_name, save_path=None):
 
     # Build combined info block
     info_text = (
-        "Image Resolution:\n"
+        "Image Resolution (used for this visualization):\n"
         f"  Height: {dataset.height}\n"
         f"  Width:  {dataset.width}\n\n"
         "Camera Intrinsics (K):\n"
@@ -103,7 +103,7 @@ def visualize_sample(dataset, sample_idx, split_name, save_path=None):
         overlay[:, right:] *= 0.3
 
         ax.imshow(overlay)
-        ax.set_title("Garg/Eigen Crop Region", fontsize=11, pad=6)
+        ax.set_title("Garg/Eigen Crop Region \nUsed for validation metrics only (no gradient backpropagation)", fontsize=10, pad=6)
         ax.axis('off')
 
         from matplotlib.patches import Rectangle

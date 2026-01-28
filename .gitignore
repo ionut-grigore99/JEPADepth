@@ -7,3 +7,4 @@ tensorboard/
 weights/
 htmls/
 ijepa/
+src/inference/output_images/

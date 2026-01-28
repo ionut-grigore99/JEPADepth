@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.models as models
-from torchvision.models.resnet import ResNet18_Weights, ResNet50_Weights
+from torchvision.models.resnet import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights, ResNet101_Weights, ResNet152_Weights
 from collections import OrderedDict
 from pytorch_model_summary import summary as psummary
 from torchsummary import summary as tsummary
@@ -73,7 +73,18 @@ class ResnetEncoder(nn.Module):
         if num_input_images > 1:
             self.encoder = resnet_multiimage_input(num_layers, pretrained, num_input_images)
         else:
-            self.encoder = resnets[num_layers](pretrained)
+            # Use new torchvision weights API (v0.13+)
+            if pretrained:
+                weights_map = {
+                    18: ResNet18_Weights.IMAGENET1K_V1,
+                    34: ResNet34_Weights.IMAGENET1K_V1,
+                    50: ResNet50_Weights.IMAGENET1K_V1,
+                    101: ResNet101_Weights.IMAGENET1K_V1,
+                    152: ResNet152_Weights.IMAGENET1K_V1
+                }
+                self.encoder = resnets[num_layers](weights=weights_map[num_layers])
+            else:
+                self.encoder = resnets[num_layers](weights=None)
 
         if num_layers > 34:
             self.num_ch_enc[1:] *= 4

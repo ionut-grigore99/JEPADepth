@@ -23,7 +23,8 @@ def normalize_image(im):
 def disp_to_depth(disp, min_depth, max_depth):
     """
         Convert network's sigmoid output_images into depth prediction.
-        The formula for this conversion is given in the 'additional considerations' section of the paper.
+        The formula for this conversion is given in the 'additional considerations' section of the paper:
+            "We convert the sigmoid output σ to depth with D = 1/(aσ + b), where a and b are chosen to constrain D between 0.1 and 100 units."
     """
     min_disp = 1 / max_depth
     max_disp = 1 / min_depth

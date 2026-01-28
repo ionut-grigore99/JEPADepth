@@ -12,6 +12,7 @@ from io import BytesIO
 from torchvision import transforms
 
 from src.models.pixio.dpt import DPTDepth
+from src.models.monodepth2.monodepth2 import MonoDepth2
 from src.utils import disp_to_depth
 from src.config.conf import Conf
 
@@ -27,7 +28,18 @@ def numpy_to_base64(array):
     im = pil.fromarray(array)
     return image_to_base64(im)
 
-def create_html_report(results, output_directory, conf):
+def format_model_name(model_name):
+    """Format model name for display (e.g., 'monodepth2' -> 'MonoDepth2')"""
+    model_name_map = {
+        'monodepth2': 'MonoDepth2',
+        'pixio': 'Pixio',
+        'pixio_vitb16': 'Pixio ViT-B/16',
+        'pixio_vitl16': 'Pixio ViT-L/16',
+        'pixio_vith16': 'Pixio ViT-H/16',
+    }
+    return model_name_map.get(model_name, model_name.title())
+
+def create_html_report(results, html_directory, conf):
     """Create a comprehensive HTML report with all predictions"""
     
     html_template = """
@@ -140,27 +152,105 @@ def create_html_report(results, output_directory, conf):
             
             .config-grid {{
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                grid-template-columns: 1fr;
                 gap: 15px;
                 margin-top: 20px;
             }}
             
             .config-item {{
                 background: #f8f9fa;
-                padding: 15px;
+                padding: 15px 20px;
                 border-radius: 8px;
                 border-left: 4px solid #667eea;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
             }}
             
             .config-item .key {{
                 font-weight: bold;
                 color: #333;
-                margin-bottom: 5px;
+                font-size: 0.95em;
             }}
             
             .config-item .value {{
                 color: #666;
                 font-family: 'Courier New', monospace;
+                word-break: break-all;
+                font-size: 0.85em;
+                line-height: 1.5;
+                padding-left: 10px;
+            }}
+            
+            .explanation-container {{
+                display: grid;
+                gap: 20px;
+                padding: 20px 30px;
+            }}
+            
+            .explanation-item {{
+                display: flex;
+                gap: 20px;
+                padding: 20px;
+                background: #f8f9fa;
+                border-radius: 10px;
+                border-left: 4px solid #667eea;
+                transition: all 0.3s ease;
+            }}
+            
+            .explanation-item:hover {{
+                background: #e8ecf3;
+                transform: translateX(5px);
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            }}
+            
+            .explanation-icon {{
+                font-size: 2em;
+                min-width: 50px;
+                text-align: center;
+            }}
+            
+            .explanation-content {{
+                flex: 1;
+            }}
+            
+            .explanation-content h4 {{
+                margin: 0 0 10px 0;
+                color: #2c3e50;
+                font-size: 1.1em;
+            }}
+            
+            .explanation-content p {{
+                margin: 0;
+                color: #555;
+                line-height: 1.6;
+            }}
+            
+            .explanation-content code {{
+                background: #e1e8ed;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-family: 'Courier New', monospace;
+                font-size: 0.9em;
+                color: #d63384;
+            }}
+            
+            .pipeline-note {{
+                margin-top: 10px;
+                padding: 15px 20px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border-radius: 8px;
+                text-align: center;
+                font-size: 0.95em;
+                line-height: 1.8;
+            }}
+            
+            .pipeline-note code {{
+                background: rgba(255,255,255,0.2);
+                color: #fde724;
+                padding: 2px 6px;
+                border-radius: 3px;
             }}
             
             .results-section {{
@@ -241,7 +331,6 @@ def create_html_report(results, output_directory, conf):
             }}
             
             .image-container {{
-                position: relative;
                 border-radius: 10px;
                 overflow: hidden;
                 box-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -260,15 +349,12 @@ def create_html_report(results, output_directory, conf):
             }}
             
             .image-label {{
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%);
+                background: #667eea;
                 color: white;
-                padding: 15px;
+                padding: 12px;
                 font-weight: bold;
-                font-size: 1.1em;
+                font-size: 1em;
+                text-align: center;
             }}
             
             .depth-comparison {{
@@ -314,11 +400,20 @@ def create_html_report(results, output_directory, conf):
             
             .colorbar {{
                 height: 30px;
+                border-radius: 5px;
+                margin: 10px 0;
+            }}
+            
+            .colorbar.viridis {{
                 background: linear-gradient(to right, 
                     #440154, #482777, #3e4989, #31688e, #26828e,
                     #1f9e89, #35b779, #6ece58, #b5de2b, #fde724);
-                border-radius: 5px;
-                margin: 10px 0;
+            }}
+            
+            .colorbar.plasma {{
+                background: linear-gradient(to right, 
+                    #0d0887, #5302a3, #8b0aa5, #b93289, #db5c68,
+                    #f48849, #febd2a, #f0f921);
             }}
             
             .colorbar-labels {{
@@ -383,9 +478,7 @@ def create_html_report(results, output_directory, conf):
         <div class="container">
             <!-- Header -->
             <div class="header">
-                <h1>🎯 JEPADepth Inference Report</h1>
-                <div class="subtitle">Monocular Depth Estimation Results</div>
-                <div class="timestamp">Generated on {timestamp}</div>
+                <h1>🎯 Monocular Depth Estimation Inference Report</h1>
             </div>
             
             <div class="progress-bar"></div>
@@ -416,9 +509,59 @@ def create_html_report(results, output_directory, conf):
             
             <!-- Configuration Section -->
             <div class="config-section">
-                <h2>⚙️ Configuration</h2>
+                <h2>⚙️ Model Configuration</h2>
                 <div class="config-grid">
                     {config_items}
+                </div>
+            </div>
+            
+            <!-- Explanation Section -->
+            <div class="config-section">
+                <h2>📖 Output Visualization Guide</h2>
+                <div class="explanation-container">
+                    <div class="explanation-item">
+                        <div class="explanation-icon"></div>
+                        <div class="explanation-content">
+                            <h4>Original Image</h4>
+                            <p>The input RGB image resized to dimensions on which we want to perform inference ({input_height}×{input_width}). 
+                            This is the image fed into the depth estimation network.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="explanation-item">
+                        <div class="explanation-icon"></div>
+                        <div class="explanation-content">
+                            <h4>Normalized Disparity</h4>
+                            <p>Direct sigmoid-activated output from the depth decoder in range [0, 1]. 
+                            This is a <strong>normalized disparity representation</strong>, not actual disparity.</p>
+                        </div>
+                    </div>
+
+                    <div class="explanation-item">
+                        <div class="explanation-icon"></div>
+                        <div class="explanation-content">
+                            <h4>Disparity (Scale-Ambiguous)</h4>
+                            <p>Scaled version of the network output using:<br>
+                            <code>disparity = min_disp + (max_disp - min_disp) × sigmoid_output</code> where <code>min_disp = 1/{max_depth}</code> and <code>max_disp = 1/{min_depth}</code>.<br>
+                            ⚠️ These units are <strong>scale-ambiguous</strong> since the network has no knowledge of metric scale!</p>
+                        </div>
+                    </div>
+
+                    <div class="explanation-item">
+                        <div class="explanation-icon"></div>
+                        <div class="explanation-content">
+                            <h4>Depth (Scale-Ambiguous)</h4>
+                            <p>Computed as: <code>depth = 1 / inverse_depth</code><br>
+                            ⚠️ The predicted depth is <strong>not metric</strong>. Self-supervised depth estimation is inherently <em>scale-ambiguous</em> because the network has no access to real-world distances.<br>
+                            To get metric depth (meters), rescale the prediction using the stereo baseline correction:<br>
+                            <code>depth_metric = scale_factor × depth</code> where factor 5.4 converts from the nominal training baseline (0.1) to the real KITTI baseline (0.54 m).</p>
+                        </div>
+                    </div>
+                    
+                    <div class="pipeline-note">
+                        <strong>⚙️ Processing Pipeline:</strong><br>
+                        Input Image → Depth Model (with <strong>Sigmoid</strong> activation) → Normalized Disparity [0,1] → <code>disp = (1/{max_depth}) + ((1/{min_depth}) - (1/{max_depth})) × norm_disp</code> → <code>depth = 1 / disp</code>
+                    </div>
                 </div>
             </div>
             
@@ -429,13 +572,26 @@ def create_html_report(results, output_directory, conf):
                 <!-- Colorbar Legend -->
                 <div class="colorbar-legend">
                     <h4>Depth Colormap Legend (Viridis)</h4>
-                    <div class="colorbar"></div>
+                    <div class="colorbar viridis"></div>
                     <div class="colorbar-labels">
-                        <span>Near (Low Disparity)</span>
-                        <span>Far (High Disparity)</span>
+                        <span>Low Depth (Near)</span>
+                        <span>High Depth (Far)</span>
                     </div>
                     <p style="margin-top: 10px; color: #666; font-size: 0.9em;">
-                        Warmer colors (yellow/green) represent closer objects, cooler colors (purple/blue) represent farther objects
+                        Warmer colors (yellow/green) represent farther objects, cooler colors (purple/blue) represent closer objects
+                    </p>
+                </div>
+
+                <!-- Colorbar Legend -->
+                <div class="colorbar-legend">
+                    <h4>Disparity Colormap Legend (Plasma)</h4>
+                    <div class="colorbar plasma"></div>
+                    <div class="colorbar-labels">
+                        <span>Low Disparity (Far)</span>
+                        <span>High Disparity (Near)</span>
+                    </div>
+                    <p style="margin-top: 10px; color: #666; font-size: 0.9em;">
+                        Higher disparity values (yellow/orange) represent closer objects, lower values (purple/blue) represent farther objects
                     </p>
                 </div>
                 
@@ -444,14 +600,6 @@ def create_html_report(results, output_directory, conf):
             
             <!-- Footer -->
             <div class="footer">
-                <p>Generated by <strong>JEPADepth</strong> - Self-Supervised Monocular Depth Estimation</p>
-                <p style="margin-top: 10px;">
-                    <a href="https://github.com/yourusername/JEPADepth" target="_blank">GitHub Repository</a> | 
-                    <a href="https://arxiv.org/abs/xxxx.xxxxx" target="_blank">Paper</a>
-                </p>
-                <p style="margin-top: 10px; font-size: 0.85em; opacity: 0.8;">
-                    © 2024 JEPADepth Project. All rights reserved.
-                </p>
             </div>
         </div>
     </body>
@@ -460,16 +608,27 @@ def create_html_report(results, output_directory, conf):
     
     # Generate config items HTML
     config_items_html = ""
+    
+    # Build config display based on model type
     config_display = {
-        "Model Name": conf.get('model_name', 'N/A'),
-        "Input Height": conf['im_sz'][0],
-        "Input Width": conf['im_sz'][1],
-        "Weights Path": conf.get('weights_path', 'N/A'),
-        "Device": "CUDA" if torch.cuda.is_available() else "CPU",
-        "Image Extension": conf.get('image_extension_inference', 'jpg'),
-        "Min Depth": "0.1m",
-        "Max Depth": "100m",
+        "Model Name": format_model_name(conf['model_name']),
     }
+    
+    # Add model-specific configuration
+    if conf['model_name'].startswith("pixio"):
+        config_display.update({
+            "Encoder": conf['pixio']['encoder'],
+            "Pretrained Checkpoint": conf['pixio'].get('pretrained_ckp', 'None'),
+            "Weights Path": conf['pixio'].get('weights_path', 'None'),
+        })
+    elif conf['model_name'] == "monodepth2":
+        config_display.update({
+            "Encoder Layers": conf['monodepth2']['num_layers'],
+            "Pretrained": "Yes" if conf['monodepth2']['pretrained'] else "No",
+            "Encoder Weights Path": conf['monodepth2']['encoder_weights_path'],
+            "Decoder Weights Path": conf['monodepth2']['decoder_weights_path'],
+            "Scales": str(conf['monodepth2']['scales']),
+        })
     
     for key, value in config_display.items():
         config_items_html += f"""
@@ -498,43 +657,27 @@ def create_html_report(results, output_directory, conf):
                     <div class="stat-label">Model Input</div>
                     <div class="stat-value">{result['model_input_size'][0]} × {result['model_input_size'][1]}</div>
                 </div>
-                <div class="stat-box">
-                    <div class="stat-label">Min Disparity</div>
-                    <div class="stat-value">{result['disp_min']:.4f}</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">Max Disparity</div>
-                    <div class="stat-value">{result['disp_max']:.4f}</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">Mean Disparity</div>
-                    <div class="stat-value">{result['disp_mean']:.4f}</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">95th Percentile</div>
-                    <div class="stat-value">{result['disp_95th']:.4f}</div>
-                </div>
             </div>
             
             <div class="result-images">
                 <div class="image-container">
-                    <div class="image-label">🖼️ Original Image</div>
+                    <div class="image-label">Original Image</div>
                     <img src="{result['original_image_b64']}" alt="Original Image">
                 </div>
                 <div class="image-container">
-                    <div class="image-label">🎨 Depth Prediction (Colorized)</div>
-                    <img src="{result['colored_depth_b64']}" alt="Colored Depth">
+                    <div class="image-label">Depth Prediction</div>
+                    <img src="{result['depth_b64']}" alt="Depth">
                 </div>
             </div>
             
             <div class="depth-comparison">
-                <div class="depth-viz">
-                    <div class="label">Raw Disparity Map</div>
-                    <img src="{result['raw_disparity_b64']}" alt="Raw Disparity">
+                <div class="image-container">
+                    <div class="image-label">Disparity Prediction</div>
+                    <img src="{result['disparity_b64']}" alt="Disparity">
                 </div>
-                <div class="depth-viz">
-                    <div class="label">Scaled Disparity Map</div>
-                    <img src="{result['scaled_disparity_b64']}" alt="Scaled Disparity">
+                <div class="image-container">
+                    <div class="image-label">Normalized Disparity Prediction</div>
+                    <img src="{result['normalized_disparity_b64']}" alt="Normalized Disparity">
                 </div>
             </div>
         </div>
@@ -546,18 +689,28 @@ def create_html_report(results, output_directory, conf):
         timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         num_images=len(results),
         input_resolution=f"{conf['im_sz'][1]}×{conf['im_sz'][0]}",
-        model_name=conf.get('model_name', 'N/A'),
+        model_name=format_model_name(conf['model_name']),
         device="CUDA" if torch.cuda.is_available() else "CPU",
         config_items=config_items_html,
-        results_html=results_html
+        results_html=results_html,
+        input_height=conf['im_sz'][0],
+        input_width=conf['im_sz'][1],
+        min_depth=conf.get('min_depth', 0.1),
+        max_depth=conf.get('max_depth', 100)
     )
     
-    # Save HTML report
-    report_path = os.path.join(output_directory, "inference_report.html")
+    # Create HTML directory if it doesn't exist
+    os.makedirs(html_directory, exist_ok=True)
+    
+    # Save HTML report with model name suffix
+    model_name_clean = conf['model_name'].replace('/', '_')
+    report_filename = f"inference_report_{model_name_clean}.html"
+    report_path = os.path.join(html_directory, report_filename)
+    
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
     
-    print(f"\nHTML Report saved to: {report_path}")
+    print(f"   HTML Report saved to: {report_path}")
     return report_path
 
 def test_simple(conf):
@@ -569,23 +722,31 @@ def test_simple(conf):
     model_input_width = conf['im_sz'][1]
 
     # Preparing model
-    if conf.get('model_name').startswith("pixio"):
+    if conf['model_name'].startswith("pixio"):
         model = DPTDepth(conf['pixio']['encoder'], conf['pixio']['pretrained_ckp'])
+        model.from_pretrained(weights_path=conf['pixio']['weights_path'], device=device)
+    elif conf['model_name'] == "monodepth2":
+        model = MonoDepth2(num_layers=conf['monodepth2']['num_layers'], pretrained=conf['monodepth2']['pretrained'], scales=conf['monodepth2']['scales'])
+        model.from_pretrained(encoder_weights_path=conf['monodepth2']['encoder_weights_path'], decoder_weights_path=conf['monodepth2']['decoder_weights_path'], device=device)
     else:
         raise NotImplementedError("Model not implemented for evaluation!")
-    model.from_pretrained(weights_path=conf['weights_path'], device=device)
     model.to(device)
     model.eval()
 
+    # Setup directories
+    images_output_directory = os.path.join(os.path.dirname(__file__), "output_images")
+    os.makedirs(images_output_directory, exist_ok=True)
+    
+    # HTML reports directory from config
+    html_directory = conf.get('htmls_path', 'htmls')
+    
     # Finding input image(s)
     if os.path.isfile(conf['image_path_inference']):
         # Testing on a single image
         paths = [conf['image_path_inference']]
-        output_directory = os.path.join(os.path.dirname(__file__), "output_images")
     elif os.path.isdir(conf['image_path_inference']):
         # Testing on a folder of images
-        paths = glob.glob(os.path.join(conf['image_path_inference'], '*.{}'.format(conf['image_extension_inference'])))
-        output_directory = os.path.join(os.path.dirname(__file__), "output_images")
+        paths = glob.glob(os.path.join(conf['image_path_inference'], "*"))
     else:
         raise Exception("Can not find conf['image_path_inference']: {}".format(conf['image_path_inference']))
 
@@ -604,58 +765,58 @@ def test_simple(conf):
             input_image_resized = input_image.resize((model_input_width, model_input_height), pil.Resampling.LANCZOS)
             input_tensor = transforms.ToTensor()(input_image_resized).unsqueeze(0)
 
-
-            # Prediction
+            # Prediction (normalized disparity, disparity, depth)
             input_tensor = input_tensor.to(device)
-            output_disparity_map = model(input_tensor)[0]
-            scaled_disp, depth = disp_to_depth(output_disparity_map, conf['min_depth'], conf['max_depth'])
+            normalized_disparity = model(input_tensor)['disp', 0]
+            disparity, depth = disp_to_depth(normalized_disparity, conf['min_depth'], conf['max_depth'])
 
-            output_disparity_map_resized = torch.nn.functional.interpolate(output_disparity_map, (original_height, original_width), mode="bicubic", align_corners=True)
+            # Resize outputs to original image size
+            normalized_disparity_resized = torch.nn.functional.interpolate(normalized_disparity, (original_height, original_width), mode="bicubic", align_corners=True)
+            disparity_resized = torch.nn.functional.interpolate(disparity, (original_height, original_width), mode="bicubic", align_corners=True)
             depth_resized = torch.nn.functional.interpolate(depth, (original_height, original_width), mode="bicubic", align_corners=True)
-            scaled_disp_resized = torch.nn.functional.interpolate(scaled_disp, (original_height, original_width), mode="bicubic", align_corners=True)
 
-            # Saving color mapped depth image
-            output_disparity_map_resized_np = output_disparity_map_resized.squeeze().cpu().numpy()
-            scaled_disp_resized_np = scaled_disp_resized.squeeze().cpu().numpy()
-            
-            vmax = np.percentile(output_disparity_map_resized_np, 95)
-            normalizer = mpl.colors.Normalize(vmin=output_disparity_map_resized_np.min(), vmax=vmax)
+            # Convert outputs to numpy
+            normalized_disparity_resized_np = normalized_disparity_resized.squeeze().cpu().numpy()
+            disparity_resized_np = disparity_resized.squeeze().cpu().numpy()
+            depth_resized_np = depth_resized.squeeze().cpu().numpy()
+
+            # Create visualizations for normalized disparity, disparity and depth
+            normalizer = mpl.colors.Normalize(vmin=normalized_disparity_resized_np.min(), vmax=normalized_disparity_resized_np.max())
+            mapper = cm.ScalarMappable(norm=normalizer, cmap='plasma')
+            normalized_disparity_viz = (mapper.to_rgba(normalized_disparity_resized_np)[:, :, :3] * 255).astype(np.uint8)
+
+            vmax = np.percentile(disparity_resized_np, 95)
+            normalizer = mpl.colors.Normalize(vmin=disparity_resized_np.min(), vmax=vmax)
+            mapper = cm.ScalarMappable(norm=normalizer, cmap='plasma')
+            disparity_viz = (mapper.to_rgba(disparity_resized_np)[:, :, :3] * 255).astype(np.uint8)
+
+            vmax = np.percentile(depth_resized_np, 95)
+            normalizer = mpl.colors.Normalize(vmin=depth_resized_np.min(), vmax=vmax)
             mapper = cm.ScalarMappable(norm=normalizer, cmap='viridis')
-            color_depth_map = (mapper.to_rgba(output_disparity_map_resized_np)[:, :, :3] * 255).astype(np.uint8)
-
-            # Create visualizations for raw and scaled disparity
-            normalizer_raw = mpl.colors.Normalize(vmin=output_disparity_map_resized_np.min(), vmax=output_disparity_map_resized_np.max())
-            mapper_raw = cm.ScalarMappable(norm=normalizer_raw, cmap='plasma')
-            raw_disp_viz = (mapper_raw.to_rgba(output_disparity_map_resized_np)[:, :, :3] * 255).astype(np.uint8)
-            
-            normalizer_scaled = mpl.colors.Normalize(vmin=scaled_disp_resized_np.min(), vmax=scaled_disp_resized_np.max())
-            mapper_scaled = cm.ScalarMappable(norm=normalizer_scaled, cmap='plasma')
-            scaled_disp_viz = (mapper_scaled.to_rgba(scaled_disp_resized_np)[:, :, :3] * 255).astype(np.uint8)
+            depth_viz = (mapper.to_rgba(depth_resized_np)[:, :, :3] * 255).astype(np.uint8)
+            im = pil.fromarray(depth_viz)
+            im.save(image_path.replace("input_images", "output_images").replace(".jpg", "_depth.jpg"))
 
             # Store result data for HTML report
             result_data = {
                 'filename': os.path.basename(image_path),
                 'original_size': (original_width, original_height),
                 'model_input_size': (model_input_width, model_input_height),
-                'disp_min': float(output_disparity_map_resized_np.min()),
-                'disp_max': float(output_disparity_map_resized_np.max()),
-                'disp_mean': float(output_disparity_map_resized_np.mean()),
-                'disp_95th': float(vmax),
                 'original_image_b64': image_to_base64(input_image),
-                'colored_depth_b64': numpy_to_base64(color_depth_map),
-                'raw_disparity_b64': numpy_to_base64(raw_disp_viz),
-                'scaled_disparity_b64': numpy_to_base64(scaled_disp_viz),
+                'depth_b64': numpy_to_base64(depth_viz),
+                'disparity_b64': numpy_to_base64(disparity_viz),
+                'normalized_disparity_b64': numpy_to_base64(normalized_disparity_viz),
             }
             results.append(result_data)
 
-            print("   Processed {:d} of {:d} images - saved predictions to:".format(idx + 1, len(paths)))
-            print("                                         {}".format(output_directory))
+            print("   Processed {:d} of {:d} images - saved to: {}".format(idx + 1, len(paths), images_output_directory))
+
 
     # Generate HTML report
     print("\n-> Generating HTML report...")
-    create_html_report(results, output_directory, conf)
+    create_html_report(results, html_directory, conf)
 
-    print('-> Done!')
+    print('\n-> Done!')
 
 if __name__ == '__main__':
 

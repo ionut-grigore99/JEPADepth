@@ -32,7 +32,7 @@ class Trainer:
         self.models = {}
         self.parameters_to_train = []
 
-        self.device = torch.device("cuda" if self.conf['use_cuda'] else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.num_scales = len(self.conf['loss_scales']) # default=[0], we only perform single scale training => num_scales=1
         self.num_input_frames = len(self.conf['frame_ids_training']) # default=[0, -1, 1] => num_input_frames=3
