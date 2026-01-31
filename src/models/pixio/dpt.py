@@ -40,9 +40,12 @@ class DPTHead(nn.Module):
         in_channels, 
         features=256, 
         out_channels=[256, 512, 1024, 1024],
-        use_bn=False
+        use_bn=False,
+        scales=range(4)  # Add scales parameter like Monodepth2
     ):
         super(DPTHead, self).__init__()
+        
+        self.scales = scales
         
         self.projects = nn.ModuleList([
             nn.Conv2d(
@@ -78,7 +81,7 @@ class DPTHead(nn.Module):
         
         self.scratch = _make_scratch(
             out_channels,
-            features,
+            features,      
             groups=1,
             expand=False,
         )
@@ -95,6 +98,14 @@ class DPTHead(nn.Module):
             nn.ReLU(True),
             nn.Conv2d(features, nclass, kernel_size=1, stride=1, padding=0),
         )
+        
+        # Add multi-scale output convolutions similar to Monodepth2
+        # These will produce outputs at different resolutions
+        self.multi_scale_convs = nn.ModuleDict()
+        for s in self.scales:
+            self.multi_scale_convs[f"dispconv_{s}"] = nn.Conv2d(
+                features, nclass, kernel_size=3, stride=1, padding=1
+            )
     
     def forward(self, out_features):
         out = []
@@ -116,9 +127,26 @@ class DPTHead(nn.Module):
         path_2 = self.scratch.refinenet2(path_3, layer_2_rn, size=layer_1_rn.shape[2:])
         path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
         
-        out = self.scratch.output_conv(path_1)
-        
-        return out
+        # If scales has multiple values, return dictionary like Monodepth2
+        if len(self.scales) > 1:
+            outputs = {}
+            # path_1 is the finest resolution feature map
+            # Generate multi-scale outputs by downsampling path_1
+            for s in self.scales:
+                # Scale 0 = full resolution, Scale 1 = 1/2, Scale 2 = 1/4, Scale 3 = 1/8
+                if s == 0:
+                    feat = path_1
+                else:
+                    # Downsample by factor of 2^s
+                    feat = F.interpolate(path_1, scale_factor=1.0/(2**s), mode='bilinear', align_corners=True)
+                
+                outputs[("disp", s)] = self.multi_scale_convs[f"dispconv_{s}"](feat)
+            
+            return outputs
+        else:
+            # Original single-scale output
+            out = self.scratch.output_conv(path_1)
+            return out
 
 
 class DPTDepth(nn.Module):
@@ -128,14 +156,16 @@ class DPTDepth(nn.Module):
         pretrained_ckp,
         features=256, 
         out_channels=[256, 512, 1024, 1024],
-        use_bn=False
+        use_bn=False,
+        scales=range(4)  # Add scales parameter
     ):
         super(DPTDepth, self).__init__()
 
         self.encoder = pixio.__dict__[encoder]()
         misc.load_pretrained_ckp(self.encoder, pretrained_ckp)
         
-        self.head = DPTHead(1, self.encoder.embed_dim * 2, features, out_channels, use_bn)
+        self.head = DPTHead(1, self.encoder.embed_dim * 2, features, out_channels, use_bn, scales)
+        self.scales = scales
         
         self.lock_encoder()
     
@@ -161,10 +191,24 @@ class DPTDepth(nn.Module):
         features = (feat.permute(0, 2, 1).reshape(feat.shape[0], feat.shape[-1], patch_h, patch_w) for feat in features)
   
         out = self.head(features)
-        out = F.interpolate(out, (h, w), mode='bilinear', align_corners=True)
-        out = F.sigmoid(out)
         
-        return out#.squeeze(1)
+        # If multi-scale (len(scales) > 1), return dictionary with multi-scale outputs
+        if len(self.scales) > 1:
+            # Return dictionary with multi-scale outputs, interpolated and sigmoids applied
+            outputs = {}
+            for s in self.scales:
+                # Interpolate each scale to its target size and apply sigmoid
+                scale_factor = 1.0 / (2 ** s)
+                target_h, target_w = int(h * scale_factor), int(w * scale_factor)
+                outputs[("disp", s)] = F.sigmoid(
+                    F.interpolate(out[("disp", s)], (target_h, target_w), mode='bilinear', align_corners=True)
+                )
+            return outputs
+        else:
+            # Original single output behavior
+            out = F.interpolate(out, (h, w), mode='bilinear', align_corners=True)
+            out = F.sigmoid(out)
+            return out
     
 
 if __name__ == "__main__":
@@ -173,12 +217,30 @@ if __name__ == "__main__":
 
     encoder = 'pixio_vith16'
     pretrained_ckp = None
-    model = DPTDepth(encoder=encoder, pretrained_ckp=pretrained_ckp).to(device)
+    
+    print("\n" + "="*80)
+    print("Testing single-scale output (scales=[0]):")
+    print("="*80)
+    model_single = DPTDepth(encoder=encoder, pretrained_ckp=pretrained_ckp, scales=[0]).to(device)
     input = torch.randn(1, 3, 640, 192).to(device)
+    output_single = model_single(input)
+    print("Output type:", type(output_single))
+    print("Output shape:", output_single.shape)
+    
+    print("\n" + "="*80)
+    print("Testing multi-scale output (scales=range(4)):")
+    print("="*80)
+    model_multi = DPTDepth(encoder=encoder, pretrained_ckp=pretrained_ckp, scales=range(4)).to(device)
+    output_multi = model_multi(input)
+    print("Output type:", type(output_multi))
+    print("Multi-scale outputs:")
+    for key in sorted(output_multi.keys()):
+        print(f"  {key}: {output_multi[key].shape}")
 
+    print("\n" + "="*80)
+    print("Visualizing the architecture:")
+    print("="*80)
     ######## 2 WAYS OF VISUALIZING THE ARCHITECTURE ########
-    architecture = psummary(model, input, max_depth=4, show_parent_layers=True, print_summary=True)
-    # print(model)
-
-    output = model(input)
-    print("Output shape:", output.shape)
+    # architecture = psummary(model_multi, input, max_depth=4, show_parent_layers=True, print_summary=True)
+    # print(model_multi)
+    

@@ -13,33 +13,11 @@ from torchvision import transforms
 
 from src.models.pixio.dpt import DPTDepth
 from src.models.monodepth2.monodepth2 import MonoDepth2
-from src.utils import disp_to_depth
+from src.utils import disp_to_depth, count_parameters, format_number, image_to_base64, numpy_to_base64, format_model_name
 from src.config.conf import Conf
+import time
 
-def image_to_base64(image):
-    """Convert PIL Image to base64 string for HTML embedding"""
-    buffered = BytesIO()
-    image.save(buffered, format="JPEG", quality=95)
-    img_str = base64.b64encode(buffered.getvalue()).decode()
-    return f"data:image/jpeg;base64,{img_str}"
-
-def numpy_to_base64(array):
-    """Convert numpy array to base64 string"""
-    im = pil.fromarray(array)
-    return image_to_base64(im)
-
-def format_model_name(model_name):
-    """Format model name for display (e.g., 'monodepth2' -> 'MonoDepth2')"""
-    model_name_map = {
-        'monodepth2': 'MonoDepth2',
-        'pixio': 'Pixio',
-        'pixio_vitb16': 'Pixio ViT-B/16',
-        'pixio_vitl16': 'Pixio ViT-L/16',
-        'pixio_vith16': 'Pixio ViT-H/16',
-    }
-    return model_name_map.get(model_name, model_name.title())
-
-def create_html_report(results, html_directory, conf):
+def create_html_report(results, html_directory, conf, num_parameters=0, avg_inference_time=0.0):
     """Create a comprehensive HTML report with all predictions"""
     
     html_template = """
@@ -48,7 +26,7 @@ def create_html_report(results, html_directory, conf):
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>JEPADepth Inference Report</title>
+        <title>Monocular Depth Estimation Inference Report</title>
         <style>
             * {{
                 margin: 0;
@@ -159,12 +137,12 @@ def create_html_report(results, html_directory, conf):
             
             .config-item {{
                 background: #f8f9fa;
-                padding: 15px 20px;
+                padding: 12px 15px;
                 border-radius: 8px;
                 border-left: 4px solid #667eea;
                 display: flex;
-                flex-direction: column;
-                gap: 8px;
+                justify-content: space-between;
+                align-items: center;
             }}
             
             .config-item .key {{
@@ -176,10 +154,7 @@ def create_html_report(results, html_directory, conf):
             .config-item .value {{
                 color: #666;
                 font-family: 'Courier New', monospace;
-                word-break: break-all;
-                font-size: 0.85em;
-                line-height: 1.5;
-                padding-left: 10px;
+                font-size: 0.9em;
             }}
             
             .explanation-container {{
@@ -472,9 +447,126 @@ def create_html_report(results, html_directory, conf):
                 width: 100%;
                 background: linear-gradient(90deg, #667eea, #764ba2);
             }}
+            
+            /* Lightbox Modal Styles */
+            .lightbox-modal {{
+                display: none;
+                position: fixed;
+                z-index: 9999;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.95);
+                cursor: zoom-out;
+                animation: fadeIn 0.3s ease;
+            }}
+            
+            .lightbox-modal.active {{
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }}
+            
+            .lightbox-content {{
+                max-width: 95%;
+                max-height: 95%;
+                object-fit: contain;
+                box-shadow: 0 0 50px rgba(255, 255, 255, 0.2);
+                animation: zoomIn 0.3s ease;
+            }}
+            
+            .lightbox-close {{
+                position: absolute;
+                top: 20px;
+                right: 40px;
+                color: white;
+                font-size: 50px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                z-index: 10000;
+            }}
+            
+            .lightbox-close:hover {{
+                color: #667eea;
+                transform: scale(1.1);
+            }}
+            
+            .lightbox-caption {{
+                position: absolute;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                color: white;
+                background: rgba(0, 0, 0, 0.7);
+                padding: 15px 30px;
+                border-radius: 10px;
+                font-size: 1.1em;
+                max-width: 80%;
+                text-align: center;
+            }}
+            
+            .clickable-image {{
+                cursor: zoom-in;
+                transition: transform 0.3s ease, box-shadow 0.3s ease;
+            }}
+            
+            .clickable-image:hover {{
+                transform: scale(1.02);
+                box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            }}
+            
+            @keyframes fadeIn {{
+                from {{ opacity: 0; }}
+                to {{ opacity: 1; }}
+            }}
+            
+            @keyframes zoomIn {{
+                from {{ transform: scale(0.8); opacity: 0; }}
+                to {{ transform: scale(1); opacity: 1; }}
+            }}
         </style>
     </head>
     <body>
+        <!-- Lightbox Modal -->
+        <div id="lightbox" class="lightbox-modal" onclick="closeLightbox()">
+            <span class="lightbox-close">&times;</span>
+            <img class="lightbox-content" id="lightbox-img">
+            <div class="lightbox-caption" id="lightbox-caption"></div>
+        </div>
+        
+        <script>
+            function openLightbox(imgSrc, caption) {{
+                const lightbox = document.getElementById('lightbox');
+                const lightboxImg = document.getElementById('lightbox-img');
+                const lightboxCaption = document.getElementById('lightbox-caption');
+                
+                lightbox.classList.add('active');
+                lightboxImg.src = imgSrc;
+                lightboxCaption.textContent = caption;
+                document.body.style.overflow = 'hidden';
+            }}
+            
+            function closeLightbox() {{
+                const lightbox = document.getElementById('lightbox');
+                lightbox.classList.remove('active');
+                document.body.style.overflow = 'auto';
+            }}
+            
+            // Close lightbox on Escape key
+            document.addEventListener('keydown', function(event) {{
+                if (event.key === 'Escape') {{
+                    closeLightbox();
+                }}
+            }});
+            
+            // Prevent closing when clicking on the image itself
+            document.getElementById('lightbox-img').addEventListener('click', function(event) {{
+                event.stopPropagation();
+            }});
+        </script>
+        
         <div class="container">
             <!-- Header -->
             <div class="header">
@@ -522,7 +614,7 @@ def create_html_report(results, html_directory, conf):
                     <div class="explanation-item">
                         <div class="explanation-icon"></div>
                         <div class="explanation-content">
-                            <h4>Original Image</h4>
+                            <h4>Input Image</h4>
                             <p>The input RGB image resized to dimensions on which we want to perform inference ({input_height}×{input_width}). 
                             This is the image fed into the depth estimation network.</p>
                         </div>
@@ -551,10 +643,10 @@ def create_html_report(results, html_directory, conf):
                         <div class="explanation-icon"></div>
                         <div class="explanation-content">
                             <h4>Depth (Scale-Ambiguous)</h4>
-                            <p>Computed as: <code>depth = 1 / inverse_depth</code><br>
+                            <p>Computed as: <code>depth = 1 / disparity</code><br>
                             ⚠️ The predicted depth is <strong>not metric</strong>. Self-supervised depth estimation is inherently <em>scale-ambiguous</em> because the network has no access to real-world distances.<br>
-                            To get metric depth (meters), rescale the prediction using the stereo baseline correction:<br>
-                            <code>depth_metric = scale_factor × depth</code> where factor 5.4 converts from the nominal training baseline (0.1) to the real KITTI baseline (0.54 m).</p>
+                            To get metric depth, rescale the prediction using the stereo baseline correction:<br>
+                            <code>depth_metric = scale_factor × depth</code> where <code>scale_factor = 5.4</code> converts from the nominal training baseline (0.1) to the real KITTI baseline (0.54 m).</p>
                         </div>
                     </div>
                     
@@ -567,7 +659,7 @@ def create_html_report(results, html_directory, conf):
             
             <!-- Results Section -->
             <div class="results-section">
-                <h2>📊 Prediction Results</h2>
+                <h2>🖼️ Sample Predictions (average inference time: {avg_inference_time})</h2>
                 
                 <!-- Colorbar Legend -->
                 <div class="colorbar-legend">
@@ -612,6 +704,7 @@ def create_html_report(results, html_directory, conf):
     # Build config display based on model type
     config_display = {
         "Model Name": format_model_name(conf['model_name']),
+        "Number of parameters": format_number(num_parameters),
     }
     
     # Add model-specific configuration
@@ -620,10 +713,11 @@ def create_html_report(results, html_directory, conf):
             "Encoder": conf['pixio']['encoder'],
             "Pretrained Checkpoint": conf['pixio'].get('pretrained_ckp', 'None'),
             "Weights Path": conf['pixio'].get('weights_path', 'None'),
+            "Scales": str(conf['pixio']['scales']),
         })
     elif conf['model_name'] == "monodepth2":
         config_display.update({
-            "Encoder Layers": conf['monodepth2']['num_layers'],
+            "ResNet Layers": conf['monodepth2']['num_layers'],
             "Pretrained": "Yes" if conf['monodepth2']['pretrained'] else "No",
             "Encoder Weights Path": conf['monodepth2']['encoder_weights_path'],
             "Decoder Weights Path": conf['monodepth2']['decoder_weights_path'],
@@ -641,10 +735,11 @@ def create_html_report(results, html_directory, conf):
     # Generate results HTML
     results_html = ""
     for idx, result in enumerate(results):
+        filename = result['filename']
         result_html = f"""
         <div class="result-item">
             <div class="result-header">
-                <h3>📸 {result['filename']}</h3>
+                <h3>📸 {filename}</h3>
                 <div class="index">#{idx + 1}</div>
             </div>
             
@@ -661,23 +756,31 @@ def create_html_report(results, html_directory, conf):
             
             <div class="result-images">
                 <div class="image-container">
-                    <div class="image-label">Original Image</div>
-                    <img src="{result['original_image_b64']}" alt="Original Image">
+                    <div class="image-label">Input Image</div>
+                    <img src="{result['input_image_b64']}" alt="Input Image" 
+                         class="clickable-image" 
+                         onclick="openLightbox(this.src, '{filename} - Input Image')">
                 </div>
                 <div class="image-container">
                     <div class="image-label">Depth Prediction</div>
-                    <img src="{result['depth_b64']}" alt="Depth">
+                    <img src="{result['depth_b64']}" alt="Depth" 
+                         class="clickable-image" 
+                         onclick="openLightbox(this.src, '{filename} - Depth Prediction')">
                 </div>
             </div>
             
             <div class="depth-comparison">
                 <div class="image-container">
                     <div class="image-label">Disparity Prediction</div>
-                    <img src="{result['disparity_b64']}" alt="Disparity">
+                    <img src="{result['disparity_b64']}" alt="Disparity" 
+                         class="clickable-image" 
+                         onclick="openLightbox(this.src, '{filename} - Disparity Prediction')">
                 </div>
                 <div class="image-container">
                     <div class="image-label">Normalized Disparity Prediction</div>
-                    <img src="{result['normalized_disparity_b64']}" alt="Normalized Disparity">
+                    <img src="{result['normalized_disparity_b64']}" alt="Normalized Disparity" 
+                         class="clickable-image" 
+                         onclick="openLightbox(this.src, '{filename} - Normalized Disparity Prediction')">
                 </div>
             </div>
         </div>
@@ -691,6 +794,8 @@ def create_html_report(results, html_directory, conf):
         input_resolution=f"{conf['im_sz'][1]}×{conf['im_sz'][0]}",
         model_name=format_model_name(conf['model_name']),
         device="CUDA" if torch.cuda.is_available() else "CPU",
+        num_parameters=format_number(num_parameters),
+        avg_inference_time=f"{avg_inference_time:.3f}s" if avg_inference_time > 0 else "N/A",
         config_items=config_items_html,
         results_html=results_html,
         input_height=conf['im_sz'][0],
@@ -723,7 +828,7 @@ def test_simple(conf):
 
     # Preparing model
     if conf['model_name'].startswith("pixio"):
-        model = DPTDepth(conf['pixio']['encoder'], conf['pixio']['pretrained_ckp'])
+        model = DPTDepth(conf['pixio']['encoder'], conf['pixio']['pretrained_ckp'], conf['pixio']['scales'])
         model.from_pretrained(weights_path=conf['pixio']['weights_path'], device=device)
     elif conf['model_name'] == "monodepth2":
         model = MonoDepth2(num_layers=conf['monodepth2']['num_layers'], pretrained=conf['monodepth2']['pretrained'], scales=conf['monodepth2']['scales'])
@@ -732,6 +837,9 @@ def test_simple(conf):
         raise NotImplementedError("Model not implemented for evaluation!")
     model.to(device)
     model.eval()
+    
+    # Count model parameters
+    total_params = count_parameters(model)
 
     # Setup directories
     images_output_directory = os.path.join(os.path.dirname(__file__), "output_images")
@@ -750,10 +858,11 @@ def test_simple(conf):
     else:
         raise Exception("Can not find conf['image_path_inference']: {}".format(conf['image_path_inference']))
 
-    print("-> Predicting on {:d} test image(s)".format(len(paths)))
+    print("\n-> Predicting on {:d} test image(s)".format(len(paths)))
 
     # Store results for HTML report
     results = []
+    inference_times = []
 
     # Predicting on each image
     with torch.no_grad():
@@ -765,10 +874,19 @@ def test_simple(conf):
             input_image_resized = input_image.resize((model_input_width, model_input_height), pil.Resampling.LANCZOS)
             input_tensor = transforms.ToTensor()(input_image_resized).unsqueeze(0)
 
-            # Prediction (normalized disparity, disparity, depth)
+            # Prediction (normalized disparity, disparity, depth) with timing
             input_tensor = input_tensor.to(device)
+            
+            # Measure inference time
+            start_time = time.time()
             normalized_disparity = model(input_tensor)['disp', 0]
             disparity, depth = disp_to_depth(normalized_disparity, conf['min_depth'], conf['max_depth'])
+            
+            # Synchronize CUDA if using GPU to get accurate timing
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            inference_time = time.time() - start_time
+            inference_times.append(inference_time)
 
             # Resize outputs to original image size
             normalized_disparity_resized = torch.nn.functional.interpolate(normalized_disparity, (original_height, original_width), mode="bicubic", align_corners=True)
@@ -802,7 +920,7 @@ def test_simple(conf):
                 'filename': os.path.basename(image_path),
                 'original_size': (original_width, original_height),
                 'model_input_size': (model_input_width, model_input_height),
-                'original_image_b64': image_to_base64(input_image),
+                'input_image_b64': image_to_base64(input_image_resized),
                 'depth_b64': numpy_to_base64(depth_viz),
                 'disparity_b64': numpy_to_base64(disparity_viz),
                 'normalized_disparity_b64': numpy_to_base64(normalized_disparity_viz),
@@ -811,10 +929,13 @@ def test_simple(conf):
 
             print("   Processed {:d} of {:d} images - saved to: {}".format(idx + 1, len(paths), images_output_directory))
 
+    # Calculate average inference time
+    avg_inference_time = sum(inference_times) / len(inference_times) if inference_times else 0.0
+    print(f"\n-> Average inference time: {avg_inference_time:.3f}s per image")
 
     # Generate HTML report
     print("\n-> Generating HTML report...")
-    create_html_report(results, html_directory, conf)
+    create_html_report(results, html_directory, conf, num_parameters=total_params, avg_inference_time=avg_inference_time)
 
     print('\n-> Done!')
 

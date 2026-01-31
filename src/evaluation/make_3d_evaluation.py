@@ -54,7 +54,7 @@ def evaluate(conf):
 
 
     if conf.get('model_name').startswith("pixio"):
-        model = DPTDepth(conf['pixio']['encoder'], conf['pixio']['pretrained_ckp'])
+        model = DPTDepth(conf['pixio']['encoder'], conf['pixio']['pretrained_ckp'], conf['pixio']['scales'])
         model.from_pretrained(weights_path='...', device=device)
     else:   
         raise NotImplementedError("Model not implemented for evaluation!")

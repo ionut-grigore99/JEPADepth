@@ -1,6 +1,6 @@
 # models
 # -----------
-model_name: "monodepth2" # choices=["pixio", "monodepth2"]
+model_name: "pixio" # choices=["pixio", "monodepth2"]
 monodepth2:
   encoder_weights_path: "weights/monodepth2/mono_640x192/encoder.pth"
   decoder_weights_path: "weights/monodepth2/mono_640x192/depth.pth"
@@ -11,6 +11,7 @@ pixio:
   weights_path: null
   encoder: "pixio_vith16" # choices=["pixio_vitb16", "pixio_vitl16", "pixio_vith16"]
   pretrained_ckp: null
+  scales: [0, 1, 2, 3] 
 resnet_pose_cnn:
   num_layers: 18
   pretrained: True
@@ -58,7 +59,6 @@ use_ssim: True # if set, uses SSIM in the loss. This is kinda always True
 monodepthv1_multiscale: False # if set, uses Monodepthv1 multiscale. This is kinda always False
 disable_automasking: False # if set, doesn't do auto-masking.
 use_average_reprojection: False # if set, uses average reprojection loss. We use minimum reprojection loss as described in "Diging into Self-Supervised MDE"
-#NOTE: I should play with the terms below in order to find the right configuration!
 loss_scales: [0] # scales used in the loss; choices: [0]; [0, 1, 2, 3]
 min_depth: 0.1 # 0.01, 0.1
 max_depth: 100.0 # 80.0, 100.0
@@ -66,13 +66,11 @@ max_depth: 100.0 # 80.0, 100.0
 
 # evaluation
 # -----------
-evaluation_split: eigen #choices=["eigen", "eigen_benchmark", "benchmark", "odom_9", "odom_10", "cityscapes"]
+evaluation_split: eigen # choices=["eigen", "eigen_benchmark", "benchmark", "cityscapes"]
 evaluation_mode: mono # choices=["mono", "stereo"]
-evaluation_post_process: True # if set will perform the flipping post processing from the original Monodepth paper.
-                              # "Unsupervised Monocular Depth Estimation With Left-Right Consistency", pg.5, bottom-right.
+evaluation_post_process: True # if set will perform the flipping post processing from the original Monodepth paper (https://arxiv.org/pdf/1609.03677, pg.5, bottom-right).
 prediction_depth_scale_factor: 1 # if set multiplies predictions by this number.
-save_predicted_disparities: False # if set saves predicted disparities.
-numpy_disparities_to_evaluate:  # optional path to a .npy disparities file to evaluate.
+numpy_disparities_to_evaluate: null # optional path to a .npy disparities file to evaluate.
 evaluate_eigen_to_benchmark: False # if set assume we are loading eigen results from .npy but we want to evaluate using the new benchmark.
-no_evaluation: False # if set disables evaluation
 disable_median_scaling: False # if set disables median scaling in evaluation.
+html_max_samples: 3  # Number of sample images to include in HTML evaluation reports.

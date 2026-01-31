@@ -43,7 +43,7 @@ class Overfit:
 
         # Prepare depth model
         if self.conf['model_name'].startswith("pixio"):
-            self.models["depth_model"] = DPTDepth(self.conf['pixio']['encoder'], self.conf['pixio']['pretrained_ckp'])
+            self.models["depth_model"] = DPTDepth(self.conf['pixio']['encoder'], self.conf['pixio']['pretrained_ckp'], scales=self.conf['pixio']['scales'])
             self.models["depth_model"] = self.models["depth_model"].to(self.device)
         else:
             print("Model not recognized!")
@@ -160,10 +160,7 @@ class Overfit:
         """
         outputs_dict={}
         for scale in self.conf['loss_scales']:
-            if self.conf['model_name'].startswith("pixio"):
-                disp = disp_maps
-            else:
-                disp = disp_maps[scale]
+            disp = disp_maps[("disp", scale)]
 
             if self.conf['monodepthv1_multiscale']:
                 source_scale = scale

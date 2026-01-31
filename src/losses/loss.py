@@ -55,10 +55,7 @@ def compute_losses(conf, inputs, disp_maps, outputs_dict, ssim):
         else:
             source_scale = 0
 
-        if conf.get('model_name').startswith("pixio"):
-            disp = disp_maps
-        else:
-            disp = disp_maps[scale]
+        disp = disp_maps[("disp", scale)]
         color = inputs[("color", 0, scale)]
         target = inputs[("color", 0, source_scale)]
 

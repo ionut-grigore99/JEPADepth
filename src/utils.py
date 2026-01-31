@@ -1,5 +1,8 @@
 import math
 import torch
+from io import BytesIO
+import base64
+import PIL.Image as pil
 from ptflops import get_model_complexity_info
 
 
@@ -247,3 +250,37 @@ def repeat_interleave_batch(x, B, repeat):
         for i in range(N)
     ], dim=0)
     return x
+
+def format_number(num):
+    """Format large numbers with K, M, B suffixes"""
+    if num >= 1e9:
+        return f"{num/1e9:.2f}B"
+    elif num >= 1e6:
+        return f"{num/1e6:.2f}M"
+    elif num >= 1e3:
+        return f"{num/1e3:.2f}K"
+    else:
+        return str(num)
+    
+def image_to_base64(image):
+    """Convert PIL Image to base64 string for HTML embedding"""
+    buffered = BytesIO()
+    image.save(buffered, format="JPEG", quality=95)
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    return f"data:image/jpeg;base64,{img_str}"
+
+def numpy_to_base64(array):
+    """Convert numpy array to base64 string"""
+    im = pil.fromarray(array)
+    return image_to_base64(im)
+
+def format_model_name(model_name):
+    """Format model name for display (e.g., 'monodepth2' -> 'MonoDepth2')"""
+    model_name_map = {
+        'monodepth2': 'MonoDepth2',
+        'pixio': 'Pixio',
+        'pixio_vitb16': 'Pixio ViT-B/16',
+        'pixio_vitl16': 'Pixio ViT-L/16',
+        'pixio_vith16': 'Pixio ViT-H/16',
+    }
+    return model_name_map.get(model_name, model_name.title())
