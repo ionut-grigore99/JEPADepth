@@ -3,6 +3,8 @@ __pycache__
 data/kitti/kitti_splits/eigen_benchmark/gt_depths.npz 
 data/kitti/kitti_splits/eigen/gt_depths.npz
 data/kitti/kitti_data/
+data/make3d/Gridlaserdata/
+data/make3d/Test134/
 tensorboard/
 weights/
 htmls/
