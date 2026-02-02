@@ -5,6 +5,7 @@ Expected results when evaluating Monodepth2 model with 1024x320 pretrained weigh
 
 |  abs_rel |   sq_rel |     rmse | rmse_log |       a1 |       a2 |       a3 | 
 |   0.115  |   0.884  |   4.700  |   0.190  |   0.879  |   0.961  |   0.982  |
+@NOTE: The results may slightly vary depending on the environment and library versions.
 '''
 
 
@@ -15,14 +16,11 @@ import torch
 from tqdm import tqdm
 import lovely_tensors as lt
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard.writer import SummaryWriter
-from pytorch_model_summary import summary as psummary
 from datetime import datetime
 import base64
 from io import BytesIO
 import PIL.Image as pil
 import matplotlib
-import matplotlib.cm
 import time
 
 from src.models.pixio.dpt import DPTDepth

@@ -1,6 +1,6 @@
 # models
 # -----------
-model_name: "pixio" # choices=["pixio", "monodepth2"]
+model_name: "monodepth2" # choices=["pixio", "monodepth2"]
 monodepth2:
   encoder_weights_path: "weights/monodepth2/mono_640x192/encoder.pth"
   decoder_weights_path: "weights/monodepth2/mono_640x192/depth.pth"
@@ -31,7 +31,7 @@ image_path_inference: 'src/inference/input_images/img1.jpg'
                      # choices: ['src/inference/input_images/img1.jpg',
                      #           'src/inference/input_images']
 num_workers: 4
-im_sz: [320, 1024] # [320, 1024], [192, 640] -> H W
+im_sz: [192, 640] # [320, 1024], [192, 640] -> H W
 bs: 12
 
 # training
@@ -74,3 +74,4 @@ numpy_disparities_to_evaluate: null # optional path to a .npy disparities file t
 evaluate_eigen_to_benchmark: False # if set assume we are loading eigen results from .npy but we want to evaluate using the new benchmark.
 disable_median_scaling: False # if set disables median scaling in evaluation.
 html_max_samples: 3  # Number of sample images to include in HTML evaluation reports.
+make3d_dataset_path: 'data/make3d' # path to Make3D dataset for evaluation. 
