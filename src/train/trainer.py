@@ -48,7 +48,7 @@ class Trainer:
             print("Model not recognized!")
             exit()
         if self.conf['load_pretrained_depth_model']:
-            self.models["depth_model"].from_pretrained()
+            self.models["depth_model"].from_pretrained(weights_path=self.conf['depth_model_weights_path'], device=self.device)
         self.models["depth_model"] = self.models["depth_model"].to(self.device)
         self.parameters_to_train += list(self.models["depth_model"].parameters())
 
@@ -98,10 +98,7 @@ class Trainer:
         # Layer to compute the SSIM loss between a pair of images. We always use it.
         if self.conf['use_ssim']:
             self.ssim = SSIM()
-            if isinstance(self.device, list):
-                self.ssim.to(self.device[0])
-            else:
-                self.ssim.to(self.device)
+            self.ssim.to(self.device)
 
         self.backproject_depth = {}
         self.project_3d = {}
@@ -111,18 +108,12 @@ class Trainer:
 
             # Layer to transform a depth image into a point cloud.
             self.backproject_depth[scale] = BackprojectDepth(self.conf['bs'], h, w)
-            if isinstance(self.device, list):
-                self.backproject_depth[scale].to(self.device[0])
-            else:
-                self.backproject_depth[scale].to(self.device)
+            self.backproject_depth[scale].to(self.device)
 
 
             # Layer which projects 3D points into a camera with intrinsics K and at position T.
             self.project_3d[scale] = Project3D(self.conf['bs'], h, w)
-            if isinstance(self.device, list):
-                self.project_3d[scale].to(self.device[0])
-            else:
-                self.project_3d[scale].to(self.device)
+            self.project_3d[scale].to(self.device)
 
         self.depth_metric_names = ["standard_metrics/abs_rel", "standard_metrics/sq_rel", "standard_metrics/rms", "standard_metrics/log_rms", "threshold_metrics/a1", "threshold_metrics/a2", "threshold_metrics/a3"]
 

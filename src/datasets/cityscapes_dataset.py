@@ -1,20 +1,22 @@
+'''Cityscapes dataset class for loading images and intrinsics for evaluation. 
+Code taken from: https://github.com/nianticlabs/manydepth/blob/master/manydepth/datasets/cityscapes_evaldataset.py'''
 import os
 import json
 import numpy as np
 import PIL.Image as pil
 
-from .mono_dataset_city import MonoDataset
+from src.datasets.mono_dataset import MonoDataset
 
 
-class CityscapesEvalDataset(MonoDataset):
-    """Cityscapes evaluation dataset - here we are loading the raw, original images rather than
+class CityscapesDataset(MonoDataset):
+    """Cityscapes evaluation dataset - here we are loading the raw, original images rather than 
     preprocessed triplets, and so cropping needs to be done inside get_color.
     """
     RAW_HEIGHT = 1024
     RAW_WIDTH = 2048
 
     def __init__(self, *args, **kwargs):
-        super(CityscapesEvalDataset, self).__init__(*args, **kwargs)
+        super(CityscapesDataset, self).__init__(*args, **kwargs)
 
     def index_to_folder_and_frame_idx(self, index):
         """Convert index in the dataset to a folder name, frame_idx and any other bits

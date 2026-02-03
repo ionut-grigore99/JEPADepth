@@ -1,6 +1,7 @@
 # models
 # -----------
-model_name: "monodepth2" # choices=["pixio", "monodepth2"]
+# depth models
+model_name: "pixio" # choices=["pixio", "monodepth2"]
 monodepth2:
   encoder_weights_path: "weights/monodepth2/mono_640x192/encoder.pth"
   decoder_weights_path: "weights/monodepth2/mono_640x192/depth.pth"
@@ -9,15 +10,18 @@ monodepth2:
   scales: [0, 1, 2, 3] 
 pixio:
   weights_path: null
-  encoder: "pixio_vith16" # choices=["pixio_vitb16", "pixio_vitl16", "pixio_vith16"]
+  encoder: "pixio_vitb16" # choices=["pixio_vitb16", "pixio_vitl16", "pixio_vith16"]
   pretrained_ckp: null
   scales: [0, 1, 2, 3] 
+# pose models
 resnet_pose_cnn:
+  weights_path: null
   num_layers: 18
   pretrained: True
   num_input_images: 2
   num_input_features: 1
   num_frames_to_predict_for: 2
+simple_pose_cnn:
   weights_path: null
 
 
@@ -31,29 +35,27 @@ image_path_inference: 'src/inference/input_images/img1.jpg'
                      # choices: ['src/inference/input_images/img1.jpg',
                      #           'src/inference/input_images']
 num_workers: 4
-im_sz: [192, 640] # [320, 1024], [192, 640] -> H W
+im_sz: [320, 1024] # [320, 1024], [192, 640] -> H W
 bs: 12
+
 
 # training
 # -----------
-training_dataset: "kitti" # dataset to train on; choices=["kitti", "kitti_odom", "kitti_depth", "kitti_test", "cityscapes_preprocessed", "nyu_raw"])
 num_epochs: 20 # number of epochs for training.
-training_split: "eigen_zhou" # which training split to use;  choices=["eigen_zhou", "eigen_full", "odom", "benchmark", "cityscapes_preprocessed", "nyu_raw"],
+training_split: "eigen_zhou" # which training split to use;  choices=["eigen_zhou", "eigen_full", "benchmark"]
 learning_rate: 0.0001 # 1e-4
 scheduler_step_size: 15 # step size of the scheduler used for training.
 weight_decay: 0.01 # 1e-4
-clip_grad_norm: False
+clip_grad_norm: null # if set, clips gradient norm to this value. If null, no clipping is performed.
 use_stereo_training: False # if set, uses stereo pair for training.
 frame_ids_training: [0, -1, 1] # frames to use for training (current, previous and next); choices: [0, -1, 1], [0, 1]
 pose_model_input: "pairs" # how many images the pose network gets; choices=["pairs", "all"]
 load_pretrained_depth_model: False # if set, uses pretrained encoder and depth decoder for training (both of them!).
 load_pretrained_pose_model: False # if set, uses pretrained PoseNet for training.
 train_from_png: False # if set, trains from raw KITTI png files (instead of jpgs).
-use_different_learning_rate: False # if set, uses different learning rate for training.
 save_frequency: 1 # number of epochs between each save.
 log_frequency: 10 # number of batches between each tensorboard log.
-pose_model_type: resnet_pose_cnn # choices=["posecnn", "resnet_pose_cnn"]
-models_to_load: ["encoder", "depth", "pose_encoder", "pose"]
+pose_model_type: resnet_pose_cnn # choices=["pose_cnn", "resnet_pose_cnn"]
 disparity_smoothness_weight: 0.001 # 1e-3
 use_ssim: True # if set, uses SSIM in the loss. This is kinda always True
 monodepthv1_multiscale: False # if set, uses Monodepthv1 multiscale. This is kinda always False
@@ -66,12 +68,39 @@ max_depth: 100.0 # 80.0, 100.0
 
 # evaluation
 # -----------
-evaluation_split: eigen # choices=["eigen", "eigen_benchmark", "benchmark", "cityscapes"]
+evaluation_split: eigen # choices=["eigen", "eigen_benchmark", "benchmark"]
 evaluation_mode: mono # choices=["mono", "stereo"]
-evaluation_post_process: True # if set will perform the flipping post processing from the original Monodepth paper (https://arxiv.org/pdf/1609.03677, pg.5, bottom-right).
+evaluation_post_process: False # if set will perform the flipping post processing from the original Monodepth paper (https://arxiv.org/pdf/1609.03677, pg.5, bottom-right).
 prediction_depth_scale_factor: 1 # if set multiplies predictions by this number.
 numpy_disparities_to_evaluate: null # optional path to a .npy disparities file to evaluate.
 evaluate_eigen_to_benchmark: False # if set assume we are loading eigen results from .npy but we want to evaluate using the new benchmark.
 disable_median_scaling: False # if set disables median scaling in evaluation.
 html_max_samples: 3  # Number of sample images to include in HTML evaluation reports.
-make3d_dataset_path: 'data/make3d' # path to Make3D dataset for evaluation. 
+make3d_dataset_path: 'data/make3d' # path to Make3D dataset for evaluation.
+cityscapes_dataset_path: 'data/cityscapes' # path to Cityscapes dataset for evaluation.
+
+
+# JEPA-style training 
+# -----------
+use_jepa_training: False  # Set to true to enable JEPA-style masked prediction training
+jepa:
+  loss_weight: 1.0  # Weight for JEPA loss relative to photometric loss (1.0 = equal weighting)
+  use_bfloat16: False  # Use mixed precision training with bfloat16
+  
+  # Masking strategy
+  patch_size: 16  # Patch size for masking (16x16 pixels). Should match encoder patch size.
+  enc_mask_scale: [0.85, 1.0]  # Context mask scale: covers 85-100% of image patches
+  pred_mask_scale: [0.15, 0.2]  # Target mask scale: covers 15-20% of image patches
+  aspect_ratio: [0.75, 1.5]  # Aspect ratio range for rectangular masks
+  num_enc_masks: 1  # Number of context masks per image (typically 1)
+  num_pred_masks: 4  # Number of target masks per image (more = harder task)
+  allow_overlap: False  # Allow overlap between context and target masks
+  min_keep: 10  # Minimum number of patches to keep in masks
+  
+  # Predictor network (small transformer for masked region prediction)
+  predictor_depth: 6  # Number of transformer layers in predictor (6-12 typical)
+  predictor_emb_dim: 384  # Hidden dimension of predictor network
+  
+  # EMA (Exponential Moving Average) for target encoder
+  ema: [0.996, 1.0]  # Momentum schedule [start, end]. Higher = slower updates.
+

@@ -1,13 +1,10 @@
-from _future_ import absolute_import, division, print_function
-
 import os
-
 import argparse
 import numpy as np
 import PIL.Image as pil
 
-from utils import readlines
-from .kitti_utils import generate_depth_map
+from src.utils import readlines
+from data.kitti.kitti_utils.kitti_utils import generate_depth_map
 
 
 def export_gt_depths_kitti():
@@ -25,13 +22,13 @@ def export_gt_depths_kitti():
                         choices=["eigen", "eigen_benchmark"])
     opt = parser.parse_args()
 
-    current_file_directory = os.path.dirname(_file_)
+    current_file_directory = os.path.dirname(__file__)
     parent_directory = os.path.dirname(current_file_directory)
     split_folder = os.path.join(parent_directory, "kitti_splits", opt.split)
     lines = readlines(os.path.join(split_folder, "test_files.txt"))
 
     print("Exporting ground truth depths for {}".format(opt.split))
-
+    breakpoint()
     gt_depths = []
     for line in lines:
 
@@ -40,12 +37,10 @@ def export_gt_depths_kitti():
 
         if opt.split == "eigen":
             calib_dir = os.path.join(opt.data_path, folder.split("/")[0])
-            velo_filename = os.path.join(opt.data_path, folder,
-                                         "velodyne_points/data", "{:010d}.bin".format(frame_id))
+            velo_filename = os.path.join(opt.data_path, folder, "velodyne_points/data", "{:010d}.bin".format(frame_id))
             gt_depth = generate_depth_map(calib_dir, velo_filename, 2, True)
         elif opt.split == "eigen_benchmark":
-            gt_depth_path = os.path.join(opt.data_path, folder, "proj_depth",
-                                         "groundtruth", "image_02", "{:010d}.png".format(frame_id))
+            gt_depth_path = os.path.join(opt.data_path, folder, "proj_depth", "groundtruth", "image_02", "{:010d}.png".format(frame_id))
             gt_depth = np.array(pil.open(gt_depth_path)).astype(np.float32) / 256
 
         gt_depths.append(gt_depth.astype(np.float32))
@@ -57,5 +52,5 @@ def export_gt_depths_kitti():
     np.savez_compressed(output_path, data=np.array(gt_depths, dtype="object"))
 
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     export_gt_depths_kitti()

@@ -30,7 +30,7 @@ def compute_reprojection_loss(conf, pred, target, ssim):
     abs_diff = torch.abs(target - pred)
     l1_loss = abs_diff.mean(1, True)
 
-    if conf.get('use_ssim') is False:
+    if conf['use_ssim'] is False:
         reprojection_loss = l1_loss
     else:
         ssim_loss = ssim(pred, target).mean(1, True)
@@ -46,11 +46,11 @@ def compute_losses(conf, inputs, disp_maps, outputs_dict, ssim):
     losses = {}
     total_loss = 0
 
-    for scale in conf.get('loss_scales'):
+    for scale in conf['loss_scales']:
         loss = 0
         reprojection_losses = []
 
-        if conf.get('monodepthv1_multiscale'):
+        if conf['monodepthv1_multiscale']:
             source_scale = scale
         else:
             source_scale = 0
@@ -59,34 +59,33 @@ def compute_losses(conf, inputs, disp_maps, outputs_dict, ssim):
         color = inputs[("color", 0, scale)]
         target = inputs[("color", 0, source_scale)]
 
-        for frame_id in conf.get('frame_ids_training')[1:]:
+        for frame_id in conf['frame_ids_training'][1:]:
             pred = outputs_dict[("color", frame_id, scale)]
             reprojection_losses.append(compute_reprojection_loss(conf, pred, target, ssim))
         reprojection_losses = torch.cat(reprojection_losses, 1)
 
-        if not conf.get('disable_automasking'):
+        if not conf['disable_automasking']:
             identity_reprojection_losses = []
-            for frame_id in conf.get('frame_ids_training')[1:]:
+            for frame_id in conf['frame_ids_training'][1:]:
                 pred = inputs[("color", frame_id, source_scale)]
                 identity_reprojection_losses.append(compute_reprojection_loss(conf, pred, target, ssim))
 
             identity_reprojection_losses = torch.cat(identity_reprojection_losses, 1)
 
-            if conf.get('use_average_reprojection'):
+            if conf['use_average_reprojection']:
                 identity_reprojection_loss = identity_reprojection_losses.mean(1, keepdim=True)
             else:
                 # save both images, and do min all at once below
                 identity_reprojection_loss = identity_reprojection_losses
 
-        if conf.get('use_average_reprojection'):
+        if conf['use_average_reprojection']:
             reprojection_loss = reprojection_losses.mean(1, keepdim=True)
         else:
             reprojection_loss = reprojection_losses
 
-        if not conf.get('disable_automasking'):
+        if not conf['disable_automasking']:
             # add random numbers to break ties
-            identity_reprojection_loss += torch.randn(identity_reprojection_loss.shape,
-                                                      device=identity_reprojection_loss.device) * 0.00001
+            identity_reprojection_loss += torch.randn(identity_reprojection_loss.shape, device=identity_reprojection_loss.device) * 0.00001
 
             combined = torch.cat((identity_reprojection_loss, reprojection_loss), dim=1)
         else:
@@ -97,24 +96,19 @@ def compute_losses(conf, inputs, disp_maps, outputs_dict, ssim):
         else:
             to_optimise, idxs = torch.min(combined, dim=1)
 
-        if not conf.get('disable_automasking'):
-            outputs_dict["identity_selection/{}".format(scale)] = (
-                        idxs > identity_reprojection_loss.shape[1] - 1).float()
+        if not conf['disable_automasking']:
+            outputs_dict["identity_selection/{}".format(scale)] = (idxs > identity_reprojection_loss.shape[1] - 1).float()
 
         loss += to_optimise.mean()
-        if color.shape[-2:] != disp.shape[-2:]:
-            disp = F.interpolate(disp, [conf.get('im_sz')[0], conf.get('im_sz')[1]], mode="bicubic",
-                                 align_corners=True)  # modified
-        # disp = torch.clip(disp, 0, 1) # @NOTE: added by me
         mean_disp = disp.mean(2, True).mean(3, True)
         norm_disp = disp / (mean_disp + 1e-7)
         smooth_loss = get_smooth_loss(norm_disp, color)
 
-        loss += conf.get('disparity_smoothness_weight') * smooth_loss / (2 ** scale)
+        loss += conf['disparity_smoothness_weight'] * smooth_loss / (2 ** scale)
         total_loss += loss
         losses["loss/{}".format(scale)] = loss
 
-    total_loss /= len(conf.get('loss_scales'))
+    total_loss /= len(conf['loss_scales'])
     losses["loss"] = total_loss
 
     return losses

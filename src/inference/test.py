@@ -800,8 +800,8 @@ def create_html_report(results, html_directory, conf, num_parameters=0, avg_infe
         results_html=results_html,
         input_height=conf['im_sz'][0],
         input_width=conf['im_sz'][1],
-        min_depth=conf.get('min_depth', 0.1),
-        max_depth=conf.get('max_depth', 100)
+        min_depth=conf['min_depth'],
+        max_depth=conf['max_depth']
     )
     
     # Create HTML directory if it doesn't exist
@@ -839,14 +839,14 @@ def test_simple(conf):
     model.eval()
     
     # Count model parameters
-    total_params = count_parameters(model)
+    total_params, _ = count_parameters(model)
 
     # Setup directories
     images_output_directory = os.path.join(os.path.dirname(__file__), "output_images")
     os.makedirs(images_output_directory, exist_ok=True)
     
     # HTML reports directory from config
-    html_directory = conf.get('htmls_path', 'htmls')
+    html_directory = conf['htmls_path']
     
     # Finding input image(s)
     if os.path.isfile(conf['image_path_inference']):

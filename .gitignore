@@ -5,6 +5,7 @@ data/kitti/kitti_splits/eigen/gt_depths.npz
 data/kitti/kitti_data/
 data/make3d/Gridlaserdata/
 data/make3d/Test134/
+data/cityscapes/
 tensorboard/
 weights/
 htmls/

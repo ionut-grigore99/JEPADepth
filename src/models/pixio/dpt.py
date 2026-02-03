@@ -209,6 +209,11 @@ class DPTDepth(nn.Module):
             out = F.interpolate(out, (h, w), mode='bilinear', align_corners=True)
             out = F.sigmoid(out)
             return out
+        
+    def from_pretrained(self, weights_path, device='cpu'):
+        loaded_dict_dec = torch.load(weights_path, map_location=device)
+        filtered_dict_dec = {k: v for k, v in loaded_dict_dec.items() if k in self.state_dict()}
+        self.load_state_dict(filtered_dict_dec)
     
 
 if __name__ == "__main__":

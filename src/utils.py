@@ -172,16 +172,18 @@ def predict_poses(conf, models, inputs):
 
 def count_parameters(model):
     """
-        Count the number of trainable parameters in a model.
+        Return both total parameters and total trainable parameters.
     """
     total_params = 0
+    total_trainable = 0
+
     for _, parameter in model.named_parameters():
-        if not parameter.requires_grad:
-            continue
-        param = parameter.numel()
-        total_params+=param
-    print(f"Total Trainable Params: {total_params / 1e6}M")
-    return total_params
+        num = parameter.numel()
+        total_params += num
+        if parameter.requires_grad:
+            total_trainable += num
+
+    return total_params, total_trainable
 
 def get_complexity(model, resolution):
     """
