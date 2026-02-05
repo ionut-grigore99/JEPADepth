@@ -278,7 +278,7 @@ def analyze_split_statistics(data_path):
 if __name__ == "__main__":
     # Configuration
     DATA_PATH = 'data/kitti/kitti_data'
-    OUTPUT_DIR = 'assets/dataset_visualizations'
+    OUTPUT_DIR = 'assets/kitti_splits_visualizations'
     
     print("\n" + "=" * 80)
     print("KITTI Dataset Inspector")

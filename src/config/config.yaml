@@ -1,7 +1,7 @@
 # models
 # -----------
 # depth models
-model_name: "pixio" # choices=["pixio", "monodepth2"]
+model_name: "monodepth2" # choices=["pixio", "monodepth2"]
 monodepth2:
   encoder_weights_path: "weights/monodepth2/mono_640x192/encoder.pth"
   decoder_weights_path: "weights/monodepth2/mono_640x192/depth.pth"
@@ -34,9 +34,9 @@ image_path_inference: 'src/inference/input_images/img1.jpg'
                      # I can also give an entire folder with images, not just one image!
                      # choices: ['src/inference/input_images/img1.jpg',
                      #           'src/inference/input_images']
-num_workers: 4
-im_sz: [320, 1024] # [320, 1024], [192, 640] -> H W
-bs: 12
+num_workers: 8
+im_sz: [192, 640] # [320, 1024], [192, 640] -> H W
+bs: 4
 
 
 # training
@@ -68,7 +68,7 @@ max_depth: 100.0 # 80.0, 100.0
 
 # evaluation
 # -----------
-evaluation_split: eigen # choices=["eigen", "eigen_benchmark", "benchmark"]
+evaluation_split: eigen_benchmark # choices=["eigen", "eigen_benchmark", "benchmark"]
 evaluation_mode: mono # choices=["mono", "stereo"]
 evaluation_post_process: False # if set will perform the flipping post processing from the original Monodepth paper (https://arxiv.org/pdf/1609.03677, pg.5, bottom-right).
 prediction_depth_scale_factor: 1 # if set multiplies predictions by this number.
@@ -80,17 +80,24 @@ make3d_dataset_path: 'data/make3d' # path to Make3D dataset for evaluation.
 cityscapes_dataset_path: 'data/cityscapes' # path to Cityscapes dataset for evaluation.
 
 
-# JEPA-style training 
+# JEPA-style training (Joint-Embedding Predictive Architecture)
 # -----------
-use_jepa_training: False  # Set to true to enable JEPA-style masked prediction training
+# When enabled, uses a separate ViT encoder (context encoder) + depth decoder architecture:
+#   1. Context Encoder (ViT from I-JEPA) → Depth Decoder → Disparity prediction
+#   2. Context Encoder → Predictor → JEPA loss (with Target Encoder)
+# This combines geometric learning (photometric loss) with semantic learning (JEPA loss).
+use_jepa_training: True  # Set to true to enable JEPA-style masked prediction training
 jepa:
+  # Encoder selection
+  encoder_name: "vit_base"  # choices: ["vit_base", "vit_large", "vit_huge"]
+  
   loss_weight: 1.0  # Weight for JEPA loss relative to photometric loss (1.0 = equal weighting)
   use_bfloat16: False  # Use mixed precision training with bfloat16
   
   # Masking strategy
   patch_size: 16  # Patch size for masking (16x16 pixels). Should match encoder patch size.
   enc_mask_scale: [0.85, 1.0]  # Context mask scale: covers 85-100% of image patches
-  pred_mask_scale: [0.15, 0.2]  # Target mask scale: covers 15-20% of image patches
+  pred_mask_scale: [0.15, 0.2]  # Target mask scale: covers 15-20% of image patches  
   aspect_ratio: [0.75, 1.5]  # Aspect ratio range for rectangular masks
   num_enc_masks: 1  # Number of context masks per image (typically 1)
   num_pred_masks: 4  # Number of target masks per image (more = harder task)
@@ -101,6 +108,6 @@ jepa:
   predictor_depth: 6  # Number of transformer layers in predictor (6-12 typical)
   predictor_emb_dim: 384  # Hidden dimension of predictor network
   
-  # EMA (Exponential Moving Average) for target encoder
+  # EMA (Exponential Moving Average) for target encoder  
   ema: [0.996, 1.0]  # Momentum schedule [start, end]. Higher = slower updates.
 

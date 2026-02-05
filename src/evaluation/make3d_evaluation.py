@@ -5,8 +5,9 @@ Expected results when evaluating Monodepth2 model with 640x192 pretrained weight
 
 |  abs_rel |   sq_rel |     rmse | rmse_log | 
 |    0.321 |    3.377 |    7.252 |    0.375 | 
+
 @NOTE: The results may slightly vary depending on the environment and library versions. I also replaced "log" with "rmse_log" in the printed table header to be consistent with other parts of the code.
-@NOTE: Obviously since the model was trained on 640x192 images, these results are obtained when evaluating at that resolution :)
+@NOTE: The reported metrics correspond to evaluating the model at the same resolution it was trained on.
 '''
 
 

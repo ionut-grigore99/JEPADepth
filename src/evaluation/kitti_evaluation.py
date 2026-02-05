@@ -1,12 +1,18 @@
 '''
 Script to evaluate a depth estimation model on the KITTI dataset.
-NOTE: In order to check the correctness of this evaluation code, please compare its results to those obtained in the Monodepth2 paper (page 6, Table 1).
+NOTE: In order to check the correctness of this evaluation code, please compare its results to those obtained in the Monodepth2 paper (Table 1 - page 6 and Table 7 - page 14).
 Expected results when evaluating Monodepth2 model with 1024x320 pretrained weights (using the 'eigen' split, monocular mode, without post-processing, with median scaling) are:
 
 |  abs_rel |   sq_rel |     rmse | rmse_log |       a1 |       a2 |       a3 | 
 |   0.115  |   0.884  |   4.700  |   0.190  |   0.879  |   0.961  |   0.982  |
+
+Expected results when evaluating Monodepth2 model with 640x192 pretrained weights (using the 'eigen_benchmark' split, monocular mode, without post-processing, with median scaling) are:
+
+|  abs_rel |   sq_rel |     rmse | rmse_log |       a1 |       a2 |       a3 | 
+|   0.090  |   0.545  |   3.945  |   0.137  |   0.914  |   0.983  |   0.995  |
+
 @NOTE: The results may slightly vary depending on the environment and library versions.
-@NOTE: Obviously since the model was trained on 1024x320 images, these results are obtained when evaluating at that resolution :)
+@NOTE: The reported metrics correspond to evaluating each model at the same resolution it was trained on.
 '''
 
 
@@ -160,7 +166,7 @@ def evaluate(conf):
             mask = np.logical_and(mask, crop_mask)
         else:
             mask = gt_depth > 0
-
+        breakpoint()
         error_map = np.abs(gt_depth - pred_depth)
         pred_depth = pred_depth[mask]
         gt_depth = gt_depth[mask]

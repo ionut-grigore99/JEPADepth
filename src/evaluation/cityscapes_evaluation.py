@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-import tqdm
+from tqdm import tqdm
 import lovely_tensors as lt
 import time
 
@@ -122,7 +122,7 @@ def evaluate(conf):
         pred_disp = pred_disps[i]
         pred_disp = cv2.resize(pred_disp, (gt_width, gt_height))
         pred_depth = 1 / pred_disp
-
+        
         # when evaluating cityscapes, we centre crop to the middle 50% of the image.
         # Bottom 25% has already been removed - so crop the sides and the top here
         gt_depth = gt_depth[256:, 192:1856]

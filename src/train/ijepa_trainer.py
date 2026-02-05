@@ -17,7 +17,8 @@ from io import StringIO
 from src.config.conf import Conf
 from src.models.posenet.simple_pose_cnn import SimplePoseCNN
 from src.models.posenet.resnet_pose_cnn import ResNetPoseCNN 
-from src.models.pixio.dpt import DPTDepth
+from src.models.pixio.dpt import DPTDepth, DPTHead
+from src.models.monodepth2.monodepth2 import MonoDepth2
 from src.models.layers import *
 from src.datasets.kitti_dataset import KITTIRAWDataset
 from src.losses.loss import *
@@ -26,8 +27,8 @@ from data.kitti.kitti_utils.kitti_utils import *
 
 # JEPA imports
 from src.masks.mask_collator import MaskCollator as MBMaskCollator
-from src.utils import apply_masks, repeat_interleave_batch, trunc_normal_
-import src.models.ijepa.vision_transformer as vit
+from src.ijepa.utils.tensors import apply_masks, repeat_interleave_batch, trunc_normal_
+import src.ijepa.models.vision_transformer as vit
 from src.ijepa.utils.logging import AverageMeter
 
 class Trainer:
@@ -46,17 +47,29 @@ class Trainer:
         self.num_input_frames = len(self.conf['frame_ids_training']) # default=[0, -1, 1] => num_input_frames=3
         self.num_pose_frames = 2 if self.conf['pose_model_input'] == "pairs" else self.num_input_frames # default=2
         self.min_depth = self.conf['min_depth']
-        self.max_depth = self.conf['max_depth'] 
+        self.max_depth = self.conf['max_depth']
+        
+        # Check if JEPA training is enabled
+        self.use_jepa = self.conf['use_jepa_training']
 
-        # Prepare depth model
-        if self.conf['model_name'].startswith("pixio"):
-            self.models["depth_model"] = DPTDepth(self.conf['pixio']['encoder'], self.conf['pixio']['pretrained_ckp'], scales=self.conf['pixio']['scales'])
-            self.models["depth_model"].from_pretrained(weights_path=self.conf['pixio']['weights_path'], device=self.device) if self.conf['load_pretrained_depth_model'] else None
-        else:
-            print("Model not recognized!")
-            exit()
-        self.models["depth_model"] = self.models["depth_model"].to(self.device)
-        self.parameters_to_train += list(self.models["depth_model"].parameters())
+        # Note: JEPA initialization is deferred until after num_total_steps is calculated
+        # Standard model initialization happens here for non-JEPA mode
+        if not self.use_jepa:
+            print("\n" + "="*80)
+            print("STANDARD TRAINING MODE (No JEPA)")
+            print("="*80)
+            # Use standard Pixio depth model
+            if self.conf['model_name'].startswith("pixio"):
+                self.models["depth_model"] = DPTDepth(self.conf['pixio']['encoder'], self.conf['pixio']['pretrained_ckp'], scales=self.conf['pixio']['scales'])
+                self.models["depth_model"].from_pretrained(weights_path=self.conf['pixio']['weights_path'], device=self.device) if self.conf['load_pretrained_depth_model'] else None
+            elif self.conf['model_name'] == "monodepth2":
+                self.models["depth_model"] = MonoDepth2(num_layers=self.conf['monodepth2']['num_layers'], pretrained=self.conf['monodepth2']['pretrained'], scales=self.conf['monodepth2']['scales'])
+                self.models["depth_model"].from_pretrained(encoder_weights_path=self.conf['monodepth2']['encoder_weights_path'], decoder_weights_path=self.conf['monodepth2']['decoder_weights_path'], device=self.device) if self.conf['load_pretrained_depth_model'] else None
+            else:
+                print("Model not recognized!")
+                exit()
+            self.models["depth_model"] = self.models["depth_model"].to(self.device)
+            self.parameters_to_train += list(self.models["depth_model"].parameters())
 
         # Prepare pose model
         if self.conf['pose_model_type']=="simple_pose_cnn":
@@ -89,6 +102,13 @@ class Trainer:
 
         num_train_samples = len(train_filenames)
         self.num_total_steps = num_train_samples // self.conf['bs'] * self.conf['num_epochs'] # total number of iterations
+
+        # Now initialize JEPA model if enabled (needs num_total_steps for EMA scheduler)
+        if self.use_jepa:
+            print("\n" + "="*80)
+            print("JEPA TRAINING MODE ENABLED")
+            print("="*80)
+            self._init_jepa_depth_model()
 
         train_dataset = self.dataset(self.conf['data_path'], train_filenames, self.conf['im_sz'][0], self.conf['im_sz'][1], self.conf['frame_ids_training'], self.num_scales, is_train=True, img_ext=img_ext) 
         self.train_loader = DataLoader(train_dataset, self.conf['bs'], True, num_workers=self.conf['num_workers'], pin_memory=True, drop_last=True)
@@ -123,114 +143,132 @@ class Trainer:
 
         self.depth_metric_names = ["standard_metrics/abs_rel", "standard_metrics/sq_rel", "standard_metrics/rms", "standard_metrics/log_rms", "threshold_metrics/a1", "threshold_metrics/a2", "threshold_metrics/a3"]
 
-        # JEPA-style training components
-        self.use_jepa = self.conf['use_jepa_training']
-        
-        if self.use_jepa:
-            print("Initializing JEPA-style training components...")
-            
-            # JEPA config parameters
-            jepa_conf = self.conf['jepa']
-            self.jepa_weight = jepa_conf['loss_weight']
-            self.use_bfloat16 = jepa_conf['use_bfloat16']
-
-            # Mask collator for creating context and target masks
-            patch_size = jepa_conf['patch_size']
-            pred_mask_scale = jepa_conf['pred_mask_scale']
-            enc_mask_scale = jepa_conf['enc_mask_scale']
-            aspect_ratio = jepa_conf['aspect_ratio']
-            num_enc_masks = jepa_conf['num_enc_masks']
-            num_pred_masks = jepa_conf['num_pred_masks']
-            allow_overlap = jepa_conf['allow_overlap']
-            min_keep = jepa_conf['min_keep']
-
-            self.mask_collator = MBMaskCollator(
-                input_size=(self.conf['im_sz'][0], self.conf['im_sz'][1]),
-                patch_size=patch_size,
-                pred_mask_scale=pred_mask_scale,
-                enc_mask_scale=enc_mask_scale,
-                aspect_ratio=aspect_ratio,
-                nenc=num_enc_masks,
-                npred=num_pred_masks,
-                allow_overlap=allow_overlap,
-                min_keep=min_keep
-            )
-            
-            # Target encoder (EMA copy of depth encoder's backbone)
-            # We create a frozen copy that will be updated with momentum
-            self.models["target_encoder"] = copy.deepcopy(self.models["depth_model"].encoder)
-            for p in self.models["target_encoder"].parameters():
-                p.requires_grad = False
-            self.models["target_encoder"].to(self.device)
-            
-            # Predictor network for JEPA
-            pred_depth = jepa_conf.get('predictor_depth', 6)
-            pred_emb_dim = jepa_conf.get('predictor_emb_dim', 384)
-            
-            # Get encoder embedding dimension from the depth model's encoder
-            if hasattr(self.models["depth_model"].encoder, 'embed_dim'):
-                encoder_embed_dim = self.models["depth_model"].encoder.embed_dim
-            else:
-                encoder_embed_dim = 768  # default for ViT-Base
-            
-            # Calculate number of patches for the predictor
-            num_patches = (self.conf['im_sz'][0] // patch_size) * (self.conf['im_sz'][1] // patch_size)
-            
-            self.models["predictor"] = vit.vit_predictor(
-                num_patches=num_patches,
-                embed_dim=encoder_embed_dim,
-                predictor_embed_dim=pred_emb_dim,
-                depth=pred_depth,
-                num_heads=encoder_embed_dim // 64  # typical head dimension is 64
-            )
-            
-            # Initialize predictor weights
-            def init_weights(m):
-                if isinstance(m, torch.nn.Linear):
-                    trunc_normal_(m.weight, std=0.02)
-                    if m.bias is not None:
-                        torch.nn.init.constant_(m.bias, 0)
-                elif isinstance(m, torch.nn.LayerNorm):
-                    torch.nn.init.constant_(m.bias, 0)
-                    torch.nn.init.constant_(m.weight, 1.0)
-            
-            for m in self.models["predictor"].modules():
-                init_weights(m)
-            
-            self.models["predictor"].to(self.device)
-            self.parameters_to_train += list(self.models["predictor"].parameters())
-            
-            # Re-initialize optimizer to include predictor parameters
-            self.model_optimizer = optim.AdamW(
-                self.parameters_to_train, 
-                self.conf['learning_rate'], 
-                weight_decay=self.conf['weight_decay']
-            )
-            self.model_lr_scheduler = optim.lr_scheduler.StepLR(
-                self.model_optimizer, 
-                self.conf['scheduler_step_size'], 
-                0.1
-            )
-            
-            # Momentum scheduler for EMA updates
-            ema_start = jepa_conf.get('ema', [0.996, 1.0])[0]
-            ema_end = jepa_conf.get('ema', [0.996, 1.0])[1]
-            ipe = len(self.train_loader)
-            self.momentum_scheduler = (
-                ema_start + i * (ema_end - ema_start) / (ipe * self.conf['num_epochs'])
-                for i in range(int(ipe * self.conf['num_epochs']) + 1)
-            )
-            
-            # JEPA loss meters
-            self.jepa_loss_meter = AverageMeter()
-            
-            # Scaler for mixed precision training
-            if self.use_bfloat16:
-                self.scaler = torch.cuda.amp.GradScaler()
-            else:
-                self.scaler = None
-
         self.save_opts()
+    
+    def _init_jepa_depth_model(self):
+        """
+        Initialize JEPA architecture with depth decoder.
+        
+        Components:
+        1. Context Encoder (ViT from I-JEPA) - trainable
+        2. Target Encoder (EMA copy of context encoder) - frozen
+        3. Predictor (small ViT) - trainable
+        4. Depth Decoder (DPT-style head) - trainable, attached to context encoder
+        """
+        jepa_conf = self.conf['jepa']
+        
+        print("\nInitializing JEPA + Depth Architecture:")
+        print("-" * 80)
+        
+        # 1. Initialize Context Encoder (ViT)
+        print("1. Creating Context Encoder (Vision Transformer)...")
+        patch_size = jepa_conf['patch_size']
+        model_name = jepa_conf.get('encoder_name', 'vit_base')  # vit_base, vit_large, vit_huge
+        
+        context_encoder = vit.__dict__[model_name](
+            img_size=self.conf['im_sz'],  # [H, W]
+            patch_size=patch_size
+        )
+        
+        # Initialize weights
+        def init_weights(m):
+            if isinstance(m, torch.nn.Linear):
+                trunc_normal_(m.weight, std=0.02)
+                if m.bias is not None:
+                    torch.nn.init.constant_(m.bias, 0)
+            elif isinstance(m, torch.nn.LayerNorm):
+                torch.nn.init.constant_(m.bias, 0)
+                torch.nn.init.constant_(m.weight, 1.0)
+        
+        for m in context_encoder.modules():
+            init_weights(m)
+        
+        context_encoder.to(self.device)
+        self.models["context_encoder"] = context_encoder
+        self.parameters_to_train += list(context_encoder.parameters())
+        
+        encoder_embed_dim = context_encoder.embed_dim
+        print(f"   ✓ Context Encoder: {model_name}, embed_dim={encoder_embed_dim}, patch_size={patch_size}")
+        
+        # 2. Initialize Target Encoder (frozen EMA copy)
+        print("2. Creating Target Encoder (frozen EMA copy)...")
+        target_encoder = copy.deepcopy(context_encoder)
+        target_encoder.to(self.device)
+        for param in target_encoder.parameters():
+            param.requires_grad = False
+        self.models["target_encoder"] = target_encoder
+        print(f"   ✓ Target Encoder: Frozen copy, parameters not trainable")
+        
+        # 3. Initialize Predictor
+        print("3. Creating Predictor (small ViT)...")
+        predictor_embed_dim = jepa_conf['predictor_emb_dim']
+        predictor_depth = jepa_conf['predictor_depth']
+        num_heads = predictor_embed_dim // 64
+        
+        predictor = vit.__dict__['vit_predictor'](
+            num_patches=context_encoder.patch_embed.num_patches,
+            embed_dim=encoder_embed_dim,
+            predictor_embed_dim=predictor_embed_dim,
+            depth=predictor_depth,
+            num_heads=num_heads,
+            grid_size=context_encoder.grid_size  # Pass grid size for rectangular images
+        )
+        
+        for m in predictor.modules():
+            init_weights(m)
+        
+        predictor.to(self.device)
+        self.models["predictor"] = predictor
+        self.parameters_to_train += list(predictor.parameters())
+        print(f"   ✓ Predictor: depth={predictor_depth}, embed_dim={predictor_embed_dim}, num_heads={num_heads}")
+        
+        # 4. Initialize Depth Decoder (DPT-style head)
+        print("4. Creating Depth Decoder (DPT-style head)...")
+        # Use DPTHead from pixio module
+        depth_decoder = DPTHead(
+            nclass=1,  # Single channel for disparity
+            in_channels=encoder_embed_dim,
+            features=256,
+            out_channels=[256, 512, 1024, 1024],
+            use_bn=False,
+            scales=self.conf['pixio']['scales']
+        )
+        depth_decoder.to(self.device)
+        self.models["depth_decoder"] = depth_decoder
+        self.parameters_to_train += list(depth_decoder.parameters())
+        print(f"   ✓ Depth Decoder: DPT-style, scales={self.conf['pixio']['scales']}")
+        
+        # 5. Mask Collator
+        print("5. Creating Mask Collator...")
+        self.mask_collator = MBMaskCollator(
+            input_size=(self.conf['im_sz'][0], self.conf['im_sz'][1]),
+            patch_size=jepa_conf['patch_size'],
+            enc_mask_scale=jepa_conf['enc_mask_scale'],
+            pred_mask_scale=jepa_conf['pred_mask_scale'],
+            aspect_ratio=jepa_conf['aspect_ratio'],
+            nenc=jepa_conf['num_enc_masks'],
+            npred=jepa_conf['num_pred_masks'],
+            allow_overlap=jepa_conf['allow_overlap'],
+            min_keep=jepa_conf['min_keep']
+        )
+        print(f"   ✓ Mask Collator: context {jepa_conf['enc_mask_scale']}, target {jepa_conf['pred_mask_scale']}")
+        
+        # 6. EMA Momentum Scheduler
+        print("6. Creating EMA Momentum Scheduler...")
+        ema_start, ema_end = jepa_conf['ema']
+        self.ema_scheduler = iter([
+            ema_start + i * (ema_end - ema_start) / self.num_total_steps
+            for i in range(self.num_total_steps + 1)
+        ])
+        print(f"   ✓ EMA Scheduler: {ema_start} → {ema_end} over {self.num_total_steps} steps")
+        
+        # 7. JEPA loss weight and meters
+        self.jepa_loss_weight = jepa_conf['loss_weight']
+        self.jepa_loss_meter = AverageMeter()
+        print(f"7. JEPA Loss Weight: {self.jepa_loss_weight}")
+        
+        print("-" * 80)
+        print("JEPA + Depth Architecture Initialized Successfully!\n")
 
     def set_train(self):
         """
@@ -281,9 +319,9 @@ class Trainer:
                 torch.nn.utils.clip_grad_norm_(self.parameters_to_train, self.conf['clip_grad_norm'])
             self.model_optimizer.step()
             
-            # Update target encoder with momentum (JEPA-specific)
+            # JEPA: Update target encoder with EMA after optimizer step
             if self.use_jepa:
-                self.update_target_encoder()
+                self._update_target_encoder()
 
             duration_optimization = time.time() - before_optimization_time
 
@@ -305,7 +343,12 @@ class Trainer:
     def process_batch(self, inputs):
         """
             Pass a minibatch through the network and generate images and losses.
-            If JEPA training is enabled, also compute JEPA masked prediction loss.
+            
+            If JEPA training:
+                - Context Encoder (ViT) → Depth Decoder → Disparity Maps
+                - Context Encoder → Predictor → JEPA Loss (with Target Encoder)
+            Else:
+                - Standard Pixio Depth Model → Disparity Maps
         """
         for key, ipt in inputs.items():
             if isinstance(self.device, list):
@@ -313,112 +356,81 @@ class Trainer:
             else:
                 inputs[key] = ipt.to(self.device)
 
-        # We feed only the image with frame_id 0 through the depth model
-        disp_maps = self.models["depth_model"](inputs["color_aug", 0, 0])
+        if self.use_jepa:
+            # JEPA MODE: Use context encoder + depth decoder
+            
+            # 1. Get images and prepare batch for mask collator
+            imgs = inputs["color_aug", 0, 0]
+            
+            # MaskCollator expects a list of tensors, not a batched tensor
+            # Convert batch to list for mask generation
+            batch_list = [imgs[i] for i in range(imgs.shape[0])]
+            
+            # Generate masks using collator (returns collated_batch, masks_enc, masks_pred)
+            _, masks_enc, masks_pred = self.mask_collator(batch_list)
+            
+            # Move masks to device (they are lists of tensors)
+            masks_enc = [u.to(self.device, non_blocking=True) for u in masks_enc]
+            masks_pred = [u.to(self.device, non_blocking=True) for u in masks_pred]
+            
+            # 2. Forward through context encoder (ViT)
+            # For depth prediction: use full features WITHOUT masks
+            encoder_output_full = self.models["context_encoder"](imgs, masks=None)
+            # encoder_output_full shape: [B, num_patches, embed_dim]
+            
+            # 3. Reshape encoder output to spatial format for depth decoder
+            # DPTHead expects a list of 4 feature maps in [B, C, H, W] format
+            B, N, C = encoder_output_full.shape
+            H, W = self.models["context_encoder"].grid_size
+            
+            # Reshape from [B, N, C] to [B, C, H, W]
+            spatial_features = encoder_output_full.permute(0, 2, 1).reshape(B, C, H, W)
+            
+            # DPTHead expects 4 feature maps at different scales
+            # Since ViT only outputs one scale, we replicate it 4 times
+            # The DPTHead will resize them internally
+            features_list = [spatial_features, spatial_features, spatial_features, spatial_features]
+            
+            # 4. Forward through depth decoder to get disparity maps at multiple scales
+            disp_maps_raw = self.models["depth_decoder"](features_list)
+            
+            # 5. Upsample disparity maps to correct sizes and apply sigmoid
+            # Similar to DPTDepth forward method (lines 192-202 in dpt.py)
+            h, w = imgs.shape[-2:]
+            disp_maps = {}
+            for s in self.conf['pixio']['scales']:
+                # Calculate target size for this scale
+                scale_factor = 1.0 / (2 ** s)
+                target_h, target_w = int(h * scale_factor), int(w * scale_factor)
+                # Interpolate and apply sigmoid
+                disp_maps[("disp", s)] = torch.sigmoid(
+                    F.interpolate(disp_maps_raw[("disp", s)], (target_h, target_w), 
+                                mode='bilinear', align_corners=True)
+                )
+            
+            # 6. Compute JEPA loss (this uses masked encoder outputs)
+            jepa_loss = self._compute_jepa_loss(imgs, masks_enc, masks_pred)
+            
+        else:
+            # STANDARD MODE: Use Pixio depth model
+            disp_maps = self.models["depth_model"](inputs["color_aug", 0, 0])
+            jepa_loss = None
 
-        # Predict poses between input frames for monocular sequences.
-        poses=predict_poses(conf, self.models, inputs)
+        # Predict poses (same for both modes)
+        poses = predict_poses(self.conf, self.models, inputs)
 
+        # Generate warped images and compute photometric loss (same for both modes)
         outputs_dict = self.generate_images_pred(inputs, disp_maps, poses)
         losses = compute_losses(self.conf, inputs, disp_maps, outputs_dict, self.ssim)
 
-        # JEPA loss computation
-        if self.use_jepa:
-            jepa_loss = self.compute_jepa_loss(inputs["color_aug", 0, 0])
+        # Add JEPA loss if in JEPA mode
+        if self.use_jepa and jepa_loss is not None:
             losses["jepa_loss"] = jepa_loss
-            losses["loss"] = losses["loss"] + self.jepa_weight * jepa_loss
+            losses["loss"] = losses["loss"] + self.jepa_loss_weight * jepa_loss
             self.jepa_loss_meter.update(jepa_loss.item())
 
         return outputs_dict, losses
     
-    def compute_jepa_loss(self, imgs):
-        """
-            Compute JEPA masked prediction loss.
-            
-            Note: This is a simplified implementation that works with the Pixio encoder.
-            The Pixio encoder doesn't natively support masked input, so we:
-            1. Extract full embeddings from both encoders
-            2. Apply masks to the embeddings post-hoc
-            3. Predict masked regions using the predictor
-            
-            Args:
-                imgs: Input images [B, 3, H, W]
-            
-            Returns:
-                jepa_loss: Smooth L1 loss between predicted and target embeddings
-        """
-        B = imgs.shape[0]
-        h_patches = self.conf['im_sz'][0] // 16
-        w_patches = self.conf['im_sz'][1] // 16
-        num_patches = h_patches * w_patches
-        
-        # Step 1: Generate masks (simplified version)
-        # In full JEPA, we'd use the mask_collator, but for compatibility we use simple random masks
-        masks_enc = []
-        masks_pred = []
-        
-        for _ in range(B):
-            # Context mask: keep ~90% of patches
-            num_keep_enc = int(num_patches * 0.9)
-            mask_enc = torch.randperm(num_patches, device=self.device)[:num_keep_enc]
-            
-            # Target mask: predict ~15% of patches (non-overlapping with context)
-            remaining = torch.randperm(num_patches, device=self.device)[num_keep_enc:]
-            num_keep_pred = min(int(num_patches * 0.15), len(remaining))
-            mask_pred = remaining[:num_keep_pred]
-            
-            masks_enc.append([mask_enc])
-            masks_pred.append([mask_pred])
-        
-        # Step 2: Forward through target encoder (frozen, no gradient)
-        with torch.no_grad():
-            # Get full embeddings from target encoder
-            # The Pixio encoder returns a list of features from different blocks
-            target_features = self.models["target_encoder"](imgs)
-            
-            # Use the last block's patch tokens as our target embeddings
-            # Shape: [B, num_patches, embed_dim]
-            h = target_features[-1]['patch_tokens_norm']
-            
-            # Normalize features (JEPA uses layer normalization)
-            h = F.layer_norm(h, (h.size(-1),))
-            
-            # Apply target masks to select which regions to predict
-            h = apply_masks(h, masks_pred)
-            
-            # Repeat for each context mask (typically just 1)
-            h = repeat_interleave_batch(h, B, repeat=len(masks_enc))
-        
-        # Step 3: Forward through context encoder (trainable, with gradients)
-        # Get embeddings from the trainable encoder
-        context_features = self.models["depth_model"].encoder(imgs)
-        z = context_features[-1]['patch_tokens_norm']
-        
-        # Apply context masks
-        z = apply_masks(z, masks_enc)
-        
-        # Step 4: Predict target embeddings from context using predictor
-        z = self.models["predictor"](z, masks_enc, masks_pred)
-        
-        # Step 5: Compute loss between predictions and targets
-        jepa_loss = F.smooth_l1_loss(z, h)
-        
-        return jepa_loss
-    
-    def update_target_encoder(self):
-        """
-            Momentum update of target encoder.
-            Uses exponential moving average (EMA) to update target encoder parameters.
-        """
-        if self.use_jepa:
-            with torch.no_grad():
-                m = next(self.momentum_scheduler)
-                for param_q, param_k in zip(
-                    self.models["depth_model"].encoder.parameters(),
-                    self.models["target_encoder"].parameters()
-                ):
-                    param_k.data.mul_(m).add_((1. - m) * param_q.detach().data)
-
     def val(self):
         """
             Validate the model on a single minibatch.
@@ -565,37 +577,81 @@ class Trainer:
 
         
         # Depth Model Statistics
-        depth_total_params, depth_trainable_params = count_parameters(self.models["depth_model"])
-        
-        # Dynamically determine output shapes by forward pass with dummy input
-        with torch.no_grad():
-            dummy_input = torch.randn(1, 3, self.conf['im_sz'][0], self.conf['im_sz'][1]).to(self.device)
-            dummy_output = self.models["depth_model"](dummy_input)
-        
-        # Determine if single-scale or multi-scale based on output type
-        is_multi_scale = isinstance(dummy_output, dict)
-        
-        depth_stats = textwrap.dedent(f"""
-            Depth Model Statistics:
-            -----------------------
-            Model Type: {self.conf['model_name']}
-            Total Parameters: {depth_total_params:,}
-            Trainable Parameters: {depth_trainable_params:,}
-            Frozen Parameters: {depth_total_params - depth_trainable_params:,}
+        if self.use_jepa:
+            # JEPA mode: separate context encoder + depth decoder
+            context_encoder_params = count_parameters(self.models["context_encoder"])
+            predictor_params = count_parameters(self.models["predictor"])
+            depth_decoder_params = count_parameters(self.models["depth_decoder"])
+            target_encoder_params = count_parameters(self.models["target_encoder"])
+            
+            depth_total_params = (context_encoder_params[0] + predictor_params[0] + 
+                                 depth_decoder_params[0] + target_encoder_params[0])
+            depth_trainable_params = (context_encoder_params[1] + predictor_params[1] + 
+                                     depth_decoder_params[1])  # target_encoder is frozen
+            
+            depth_stats = textwrap.dedent(f"""
+                JEPA + Depth Model Statistics:
+                -------------------------------
+                Model Type: {self.conf['model_name']} (JEPA Mode)
+                
+                Context Encoder (ViT):
+                  Total Parameters: {context_encoder_params[0]:,}
+                  Trainable Parameters: {context_encoder_params[1]:,}
+                
+                Target Encoder (EMA):
+                  Total Parameters: {target_encoder_params[0]:,}
+                  Trainable Parameters: {target_encoder_params[1]:,} (frozen)
+                
+                Predictor:
+                  Total Parameters: {predictor_params[0]:,}
+                  Trainable Parameters: {predictor_params[1]:,}
+                
+                Depth Decoder:
+                  Total Parameters: {depth_decoder_params[0]:,}
+                  Trainable Parameters: {depth_decoder_params[1]:,}
+                
+                Total (All Components):
+                  Total Parameters: {depth_total_params:,}
+                  Trainable Parameters: {depth_trainable_params:,}
+                  Frozen Parameters: {depth_total_params - depth_trainable_params:,}
 
-            Input Shape: [batch_size, 3, {self.conf['im_sz'][0]}, {self.conf['im_sz'][1]}]
-            """)
-        
-        if is_multi_scale:
-            depth_stats += "\nOutput Shapes (Multi-Scale):\n"
-            for key in sorted(dummy_output.keys()):
-                shape = dummy_output[key].shape
-                depth_stats += f"  {key}: [batch_size, {shape[1]}, {shape[2]}, {shape[3]}]\n"
+                Input Shape: [batch_size, 3, {self.conf['im_sz'][0]}, {self.conf['im_sz'][1]}]
+                Output Shapes: Multi-scale disparity maps [scales: {self.conf['pixio']['scales']}]
+                """)
+            self.writers['train'].add_text('depth_model_stats', depth_stats)
         else:
-            shape = dummy_output.shape
-            depth_stats += f"Output Shape (Single-Scale): [batch_size, {shape[1]}, {shape[2]}, {shape[3]}]\n"
-        
-        self.writers['train'].add_text('depth_model_stats', depth_stats)
+            # Standard mode: single depth model
+            depth_total_params, depth_trainable_params = count_parameters(self.models["depth_model"])
+            
+            # Dynamically determine output shapes by forward pass with dummy input
+            with torch.no_grad():
+                dummy_input = torch.randn(1, 3, self.conf['im_sz'][0], self.conf['im_sz'][1]).to(self.device)
+                dummy_output = self.models["depth_model"](dummy_input)
+            
+            depth_stats = textwrap.dedent(f"""
+                Depth Model Statistics:
+                -----------------------
+                Model Type: {self.conf['model_name']}
+                Total Parameters: {depth_total_params:,}
+                Trainable Parameters: {depth_trainable_params:,}
+                Frozen Parameters: {depth_total_params - depth_trainable_params:,}
+
+                Input Shape: [batch_size, 3, {self.conf['im_sz'][0]}, {self.conf['im_sz'][1]}]
+                """)
+            
+            # Determine if single-scale or multi-scale based on output type
+            is_multi_scale = isinstance(dummy_output, dict)
+            
+            if is_multi_scale:
+                depth_stats += "\nOutput Shapes (Multi-Scale):\n"
+                for key in sorted(dummy_output.keys()):
+                    shape = dummy_output[key].shape
+                    depth_stats += f"  {key}: [batch_size, {shape[1]}, {shape[2]}, {shape[3]}]\n"
+            else:
+                shape = dummy_output.shape
+                depth_stats += f"Output Shape (Single-Scale): [batch_size, {shape[1]}, {shape[2]}, {shape[3]}]\n"
+            
+            self.writers['train'].add_text('depth_model_stats', depth_stats)
         
         # Pose Model Statistics
         pose_total_params, pose_trainable_params = count_parameters(self.models["pose_model"])
@@ -639,27 +695,60 @@ class Trainer:
             pose_stats += f"  output: {shape_str}\n"
         
         self.writers['train'].add_text('pose_model_stats', pose_stats)
+    
+    def _compute_jepa_loss(self, imgs, masks_enc, masks_pred):
+        """
+        Compute JEPA masked prediction loss.
         
-        # JEPA Components Statistics (if enabled)
-        if self.use_jepa:
-            target_encoder_total_params, target_encoder_trainable_params = count_parameters(self.models["target_encoder"])
-            predictor_total_params, predictor_trainable_params = count_parameters(self.models["predictor"])
-
-            jepa_stats = textwrap.dedent(f"""
-                JEPA Components Statistics:
-                ----------------------------
-                Target Encoder (frozen EMA copy):
-                  Total Parameters: {target_encoder_total_params:,}
-                  Trainable Parameters: {target_encoder_trainable_params:,}
-                  Frozen Parameters: {target_encoder_total_params - target_encoder_trainable_params:,}
-
-                Predictor Network:
-                  Total Parameters: {predictor_total_params:,}
-                  Trainable Parameters: {predictor_trainable_params:,}
-                  Frozen Parameters: {predictor_total_params - predictor_trainable_params:,}
-                """)
+        Args:
+            imgs: Input images [B, 3, H, W]
+            masks_enc: Context masks for encoder
+            masks_pred: Target masks for prediction
             
-            self.writers['train'].add_text('jepa_stats', jepa_stats)
+        Returns:
+            JEPA loss (scalar tensor)
+        """
+        B = imgs.shape[0]
+        
+        # Step 1: Target branch (frozen target encoder)
+        with torch.no_grad():
+            # Forward through target encoder
+            h = self.models["target_encoder"](imgs)
+            
+            # Normalize over feature dimension
+            h = F.layer_norm(h, (h.size(-1),))
+            
+            # Apply target masks to get regions to predict
+            h = apply_masks(h, masks_pred)
+            
+            # Repeat for each context mask
+            h = repeat_interleave_batch(h, B, repeat=len(masks_enc))
+        
+        # Step 2: Context branch (trainable encoder + predictor)
+        # Forward through context encoder
+        z = self.models["context_encoder"](imgs, masks_enc)
+        
+        # Forward through predictor to predict target regions
+        z = self.models["predictor"](z, masks_enc, masks_pred)
+        
+        # Step 3: Compute smooth L1 loss between predictions and targets
+        loss = F.smooth_l1_loss(z, h)
+        
+        return loss
+    
+    def _update_target_encoder(self):
+        """
+        Update target encoder using EMA (Exponential Moving Average).
+        
+        θ_target = m * θ_target + (1-m) * θ_context
+        """
+        with torch.no_grad():
+            m = next(self.ema_scheduler)
+            for param_context, param_target in zip(
+                self.models["context_encoder"].parameters(),
+                self.models["target_encoder"].parameters()
+            ):
+                param_target.data.mul_(m).add_((1. - m) * param_context.detach().data)
 
     def save_model(self):
         """

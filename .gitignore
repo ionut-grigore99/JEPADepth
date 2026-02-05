@@ -5,7 +5,9 @@ data/kitti/kitti_splits/eigen/gt_depths.npz
 data/kitti/kitti_data/
 data/make3d/Gridlaserdata/
 data/make3d/Test134/
-data/cityscapes/
+data/cityscapes/camera_trainvaltest/
+data/cityscapes/gt_depths/
+data/cityscapes/leftImg8bit_sequence/
 tensorboard/
 weights/
 htmls/

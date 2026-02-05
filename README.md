@@ -115,7 +115,65 @@ This will generate `gt_depths.npz` files in the corresponding split directories 
 
 ## Cityscapes evaluation data
 
-The ground truth depth files for Cityscapes can be found at [HERE](https://storage.googleapis.com/niantic-lon-static/research/manydepth/gt_depths_cityscapes.zip).
+### Download test images and camera files
+
+To evaluate on Cityscapes, you need to download the test image sequences and camera calibration files from the [Cityscapes dataset website](https://www.cityscapes-dataset.com/downloads/):
+
+1. **leftImg8bit_sequence_trainvaltest.zip** (324GB) **Warning: Very large file!**
+2. **camera_trainvaltest.zip** (2MB)
+
+After downloading, unzip both files under `data/cityscapes/`:
+
+```bash
+cd data/cityscapes
+unzip leftImg8bit_sequence_trainvaltest.zip
+unzip camera_trainvaltest.zip
+cd ../..
+```
+
+**Optional - Save disk space**: Since we only need the test set for evaluation, you can delete the train and val folders:
+
+```bash
+rm -rf data/cityscapes/leftImg8bit_sequence/train
+rm -rf data/cityscapes/leftImg8bit_sequence/val
+rm -rf data/cityscapes/camera/train
+rm -rf data/cityscapes/camera/val
+```
+
+**Further cleanup**: To keep only the 1525 test files needed for evaluation (saving ~87GB), use the cleanup script:
+
+```bash
+# First run in dry-run mode to preview what will be deleted
+python3 -m data.cityscapes.cleanup_cityscapes --dataset_dir data/cityscapes --test_file_list data/cityscapes/cityscapes_test_files.txt --dry-run
+
+# Then run the actual cleanup
+python3 -m data.cityscapes.cleanup_cityscapes --dataset_dir data/cityscapes --test_file_list data/cityscapes/cityscapes_test_files.txt
+```
+
+### Expected directory structure
+
+After extraction, your directory structure should look like this:
+
+```
+data/cityscapes/
+├── leftImg8bit_sequence/
+│   └── test/
+│       ├── berlin/
+│       ├── bielefeld/
+│       ├── bonn/
+│       └── ...
+└── camera_trainvaltest/
+    └── camera/
+        └── test/
+            ├── berlin/
+            ├── bielefeld/
+            ├── bonn/
+            └── ...
+```
+
+### Download ground truth depth files
+
+The ground truth depth files for Cityscapes can be found at [here](https://storage.googleapis.com/niantic-lon-static/research/manydepth/gt_depths_cityscapes.zip).
 Download this and unzip into `data/cityscapes`.
 
 ## Make3D evaluation data
@@ -151,6 +209,26 @@ The KITTI evaluation pipeline processes each test image through the trained dept
 python -m src.evaluation.kitti_evaluation
 ```
 
+#### Verification of Evaluation Script
+
+To verify the correctness of the KITTI evaluation implementation, you can compare results against those reported in the [Monodepth2 paper](https://arxiv.org/abs/1806.01260):
+
+**Expected results with Monodepth2 (1024×320) on Eigen split** (monocular, no post-processing, with median scaling):
+```
+|  abs_rel |   sq_rel |     rmse | rmse_log |       a1 |       a2 |       a3 | 
+|   0.115  |   0.884  |   4.700  |   0.190  |   0.879  |   0.961  |   0.982  |
+```
+*Reference: Table 1 (page 6) and Table 7 (page 14) of the Monodepth2 paper*
+
+**Expected results with Monodepth2 (640×192) on Eigen Benchmark split** (monocular, no post-processing, with median scaling):
+```
+|  abs_rel |   sq_rel |     rmse | rmse_log |       a1 |       a2 |       a3 | 
+|   0.090  |   0.545  |   3.945  |   0.137  |   0.914  |   0.983  |   0.995  |
+```
+*Reference: Table 7 (page 14) of the Monodepth2 paper*
+
+*Note: Results may vary slightly depending on environment and library versions. Metrics correspond to evaluating each model at its training resolution.*
+
 ### Cityscapes zero-shot evaluation
 
 ![Cityscapes Evaluation Pipeline](assets/CITYSCAPES%20Evaluation%20Pipeline.png)
@@ -170,6 +248,19 @@ The Make3D zero-shot evaluation tests the model on outdoor scenes with different
 ```bash
 python -m src.evaluation.make3d_evaluation
 ```
+
+#### Verification of Evaluation Script
+
+To verify the correctness of the Make3D evaluation implementation, you can compare results against those reported in the [Monodepth2 paper](https://arxiv.org/abs/1806.01260):
+
+**Expected results with Monodepth2 (640×192)**:
+```
+|  abs_rel |   sq_rel |     rmse | rmse_log | 
+|    0.321 |    3.377 |    7.252 |    0.375 | 
+```
+*Reference: Table 3 (page 7) of the Monodepth2 paper*
+
+*Note: Results may vary slightly depending on environment and library versions. Metrics correspond to evaluating the model at its training resolution.*
 
 ## Training
 
@@ -193,12 +284,6 @@ Then run:
 ```bash
 python -m src.train.trainer
 ```
-
-JEPA training combines:
-- **Photometric loss**: Traditional self-supervised depth learning from video
-- **JEPA loss**: Masked region prediction for better visual representations
-
-**For complete documentation, see [`IJEPA_COMPLETE_GUIDE.md`](IJEPA_COMPLETE_GUIDE.md)**
 
 #### What is I-JEPA?
 

@@ -34,7 +34,7 @@ class CityscapesDataset(MonoDataset):
 
     def load_intrinsics(self, city, frame_name):
         # adapted from sfmlearner
-        split = "test"  # if self.is_train else "val"
+        split = "test"  
 
         camera_file = os.path.join(self.data_path, 'camera_trainvaltest', 'camera',
                                    split, city, frame_name + '_camera.json')
@@ -92,7 +92,6 @@ class CityscapesDataset(MonoDataset):
 
     def get_image_path(self, city, frame_name, side, is_sequence=False):
         folder = "leftImg8bit_sequence"
-        # folder = "leftImg8bit" if not is_sequence else "leftImg8bit_sequence"
         split = "test"
         image_path = os.path.join(
             self.data_path, folder, split, city, frame_name + '_leftImg8bit.png')
