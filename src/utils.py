@@ -242,6 +242,33 @@ def apply_masks(x, masks):
         all_x += [torch.gather(x, dim=1, index=mask_keep)]
     return torch.cat(all_x, dim=0)
 
+def apply_masks_with_prefix(x, masks, n_prefix):
+    """
+    Apply a list of masks to the input tensor (starting after n_prefix tokens) and return the masked patches concatenated along the batch dimension.
+    The first n_prefix tokens (e.g., cls_token, storage_tokens) are kept unchanged.
+    
+    Args:
+        :x: tensor of shape [B (batch-size), N (num-patches), D (feature-dim)]
+        :masks: list of tensors containing indices of patches in [N - n_prefix] to keep
+        :n_prefix: number of prefix tokens to keep unchanged (e.g., 1 for cls_token, 5 if we have 1 cls_token + 4 storage tokens)
+    """
+    if torch.is_tensor(masks):
+        masks = [masks]
+
+    prefix_tokens = x[:, :n_prefix, :]        # [B, n_prefix, D]
+    patch_tokens  = x[:, n_prefix:, :]        # [B, N-n_prefix, D]
+    D = patch_tokens.size(-1)
+
+    all_x = []
+    for m in masks:
+        mask_keep = m.unsqueeze(-1).expand(-1, -1, D)  # [B, K, D]
+        masked_patches = torch.gather(patch_tokens, dim=1, index=mask_keep)  # [B, K, D]
+        masked_x = torch.cat([prefix_tokens, masked_patches], dim=1)         # [B, n_prefix+K, D]
+        all_x.append(masked_x)
+
+    return torch.cat(all_x, dim=0)
+    
+
 def repeat_interleave_batch(x, B, repeat):
     """
         Repeat the input tensor along the batch dimension by <repeat> times.

@@ -86,7 +86,7 @@ def evaluate(conf):
             for data in tqdm(dataloader):
                 step = step + 1
                 input_color = data[("color", 0, 0)].to(device) # tensor[1, 3, H, W] with values between 0 and 1!
-
+                
                 if conf['evaluation_post_process']: # flipping post processing from the Monodepthv1 paper! (https://arxiv.org/pdf/1609.03677 - pg. 5 bottom right)
                     # Post-processed results require each image to have two forward passes
                     input_color = torch.cat((input_color, torch.flip(input_color, [3])), 0) # tensor[2, 3, H, W] with values between 0 and 1!
@@ -166,7 +166,7 @@ def evaluate(conf):
             mask = np.logical_and(mask, crop_mask)
         else:
             mask = gt_depth > 0
-        breakpoint()
+        
         error_map = np.abs(gt_depth - pred_depth)
         pred_depth = pred_depth[mask]
         gt_depth = gt_depth[mask]

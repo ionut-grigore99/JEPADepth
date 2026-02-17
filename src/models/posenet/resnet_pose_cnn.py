@@ -187,8 +187,8 @@ if __name__=="__main__":
     num_frames_to_predict_for=2  # Number of relative poses (bidirectional: 0->1 and 1->0)
 
     model=ResNetPoseCNN(num_layers, pretrained, num_input_images, num_input_features, num_frames_to_predict_for).to(device)
-    x1=torch.rand(1, 3, 640, 192).to(device)
-    x2=torch.rand(1, 3, 640, 192).to(device)
+    x1=torch.rand(1, 3, 192, 640).to(device)
+    x2=torch.rand(1, 3, 192, 640).to(device)
     input=torch.cat((x1, x2), dim=1)
 
     ######## 2 WAYS OF VISUALIZING THE ARCHITECTURE ########

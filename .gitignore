@@ -11,6 +11,4 @@ data/cityscapes/leftImg8bit_sequence/
 tensorboard/
 weights/
 htmls/
-ijepa/
 src/inference/output_images/
-src/train/backup_trainer.py

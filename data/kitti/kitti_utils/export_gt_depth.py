@@ -28,7 +28,7 @@ def export_gt_depths_kitti():
     lines = readlines(os.path.join(split_folder, "test_files.txt"))
 
     print("Exporting ground truth depths for {}".format(opt.split))
-    breakpoint()
+
     gt_depths = []
     for line in lines:
 

@@ -57,13 +57,13 @@ if __name__=="__main__":
     device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     model=SimplePoseCNN(num_input_frames=2).to(device)
-    x1=torch.rand(1, 3, 640, 192).to(device)
-    x2=torch.rand(1, 3, 640, 192).to(device)
+    x1=torch.rand(1, 3, 192, 640).to(device)
+    x2=torch.rand(1, 3, 192, 640).to(device)
     input=torch.cat((x1, x2), dim=1)
 
     ######## 3 WAYS OF VISUALIZING THE ARCHITECTURE ########
     #architecture = psummary(model, input, max_depth=4, show_parent_layers=True, print_summary=True)
-    tsummary(model, (6, 640, 192)) # USE WITHOUT BATCH DIMENSION, IT AUTOMATICALLY PUT -1 FOR IT
+    tsummary(model, (6, 192, 640)) # USE WITHOUT BATCH DIMENSION, IT AUTOMATICALLY PUT -1 FOR IT
     # print(model)
 
     output=model(input)

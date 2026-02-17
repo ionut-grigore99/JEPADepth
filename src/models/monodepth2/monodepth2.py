@@ -16,7 +16,7 @@ class MonoDepth2(nn.Module):
     def forward(self, x):
         features = self.encoder(x)
         disparity = self.decoder(features)
-        
+
         return disparity
 
     def from_pretrained(self, encoder_weights_path, decoder_weights_path, device='cpu'):
@@ -38,7 +38,7 @@ if __name__ == "__main__":
         decoder_weights_path="weights/monodepth2/mono_640x192/depth.pth",
         device=device
     )
-    input=torch.rand(1, 3, 640, 192).to(device)
+    input=torch.rand(1, 3, 192, 640).to(device)
 
     ######## 2 WAYS OF VISUALIZING THE ARCHITECTURE ########
     architecture = psummary(model, input, max_depth=4, show_parent_layers=True, print_summary=True)
