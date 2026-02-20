@@ -117,8 +117,7 @@ def compute_losses(conf, inputs, disp_maps, outputs_dict, ssim):
 def compute_depth_metrics(inputs, outputs_dict, metrics, depth_metric_names):
     """
         Compute depth metrics, to allow monitoring during training.
-        This isn't particularly accurate as it averages over the entire batch,
-        so is only used to give an indication of validation performance.
+        This isn't particularly accurate as it averages over the entire batch, so is only used to give an indication of validation performance.
     """
     depth_pred = outputs_dict[("depth", 0, 0)]
     depth_pred = torch.clamp(F.interpolate(depth_pred, [375, 1242], mode="bilinear", align_corners=False), 1e-3, 80)

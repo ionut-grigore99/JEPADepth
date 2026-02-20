@@ -1,7 +1,5 @@
-from csv import writer
 from pathlib import Path
 import time
-import yaml
 import lovely_tensors as lt
 from datetime import datetime
 import copy
@@ -28,8 +26,9 @@ from data.kitti.kitti_utils.kitti_utils import *
 
 # JEPA imports
 from src.masks.mask_collator import MaskCollator as MBMaskCollator
-from src.utils import apply_masks, repeat_interleave_batch, trunc_normal_
+from src.utils import apply_masks, repeat_interleave_batch, visualize_masked_image, add_patch_grid
 import src.models.ijepa.vision_transformer as vit
+from src.models.ijepa.vision_transformer import load_timm_vit_into_predictor
 from src.models.dinov3.hub import dinov3_vits16, dinov3_vitb16, dinov3_vitl16
 from src.models.dinov3.fpn_decoder import FPNDecoder
 
@@ -82,9 +81,6 @@ class Trainer:
         self.models["pose_model"] = self.models["pose_model"].to(self.device)
         self.parameters_to_train += list(self.models["pose_model"].parameters())
 
-        self.model_optimizer = optim.AdamW(self.parameters_to_train, self.conf['learning_rate'], weight_decay=self.conf['weight_decay']) 
-        self.model_lr_scheduler = optim.lr_scheduler.StepLR(self.model_optimizer, self.conf['scheduler_step_size'], self.conf['scheduler_gamma']) 
-
         print("Training model named:\n  ", self.conf['model_name']) if not self.use_jepa else print("Training JEPA + Depth model with encoder:\n  ", self.conf['jepa']['encoder_size'])
         print("Models and tensorboard events files are saved to:\n  ", self.conf['tensorboard_path'])
         print("Training is using:\n  ", self.device)
@@ -104,6 +100,9 @@ class Trainer:
         # Now initialize JEPA model if enabled (needs num_total_steps for EMA scheduler)
         if self.use_jepa:
             self.init_jepa_depth_model()
+        
+        self.model_optimizer = optim.AdamW(self.parameters_to_train, self.conf['learning_rate'], weight_decay=self.conf['weight_decay']) 
+        self.model_lr_scheduler = optim.lr_scheduler.StepLR(self.model_optimizer, self.conf['scheduler_step_size'], self.conf['scheduler_gamma']) 
 
         train_dataset = self.dataset(self.conf['data_path'], train_filenames, self.conf['im_sz'][0], self.conf['im_sz'][1], self.conf['frame_ids_training'], self.num_scales, is_train=True, img_ext=img_ext) 
         self.train_loader = DataLoader(train_dataset, self.conf['bs'], True, num_workers=self.conf['num_workers'], pin_memory=True, drop_last=True)
@@ -111,6 +110,16 @@ class Trainer:
         val_dataset = self.dataset(self.conf['data_path'], val_filenames, self.conf['im_sz'][0], self.conf['im_sz'][1], self.conf['frame_ids_training'], self.num_scales, is_train=False, img_ext=img_ext) 
         self.val_loader = DataLoader(val_dataset, self.conf['bs'], True, num_workers=self.conf['num_workers'], pin_memory=True, drop_last=True)
         self.val_iter = iter(self.val_loader)
+
+        # Initialize fixed visualization samples if enabled
+        if self.conf['use_fixed_vis_samples']:
+            self.fixed_vis_samples = {
+                'train': None,
+                'val': None
+            }
+            self.initialize_fixed_vis_samples()
+        else:
+            self.fixed_vis_samples = None
 
         self.writers = {}
         for mode in ["train", "val"]:
@@ -158,12 +167,10 @@ class Trainer:
         print("Creating Context Encoder (DINOv3 ViT)...")
         encoder_size = jepa_conf['encoder_size']  
         model_map = {"small": dinov3_vits16, "base": dinov3_vitb16, "large": dinov3_vitl16}
-
         context_encoder = model_map[encoder_size](pretrained=False)
         weights_path = jepa_conf['encoder_weights_path']
         state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
         context_encoder.load_state_dict(state_dict)
-        
         context_encoder.to(self.device)
         self.models["context_encoder"] = context_encoder
         self.parameters_to_train += list(context_encoder.parameters())
@@ -182,30 +189,16 @@ class Trainer:
         print("Creating Predictor (lightweight ViT)...")
         predictor_embed_dim = jepa_conf['predictor_emb_dim']
         predictor_depth = jepa_conf['predictor_depth']
-
         predictor = vit.__dict__['vit_predictor'](
             num_patches=self.conf['im_sz'][0] // context_encoder.patch_size * self.conf['im_sz'][1] // context_encoder.patch_size,
             img_size=self.conf['im_sz'], 
             patch_size=context_encoder.patch_size,
-            embed_dim=context_encoder.embed_dim,
+            # embed_dim=context_encoder.embed_dim,
             predictor_embed_dim=predictor_embed_dim,
             depth=predictor_depth,
             num_heads=context_encoder.num_heads,
         )
-
-        # Initialize weights
-        def init_weights(m):
-            if isinstance(m, torch.nn.Linear):
-                trunc_normal_(m.weight, std=0.02)
-                if m.bias is not None:
-                    torch.nn.init.constant_(m.bias, 0)
-            elif isinstance(m, torch.nn.LayerNorm):
-                torch.nn.init.constant_(m.bias, 0)
-                torch.nn.init.constant_(m.weight, 1.0)
-        
-        for m in predictor.modules():
-            init_weights(m)
-        
+        predictor = load_timm_vit_into_predictor(predictor)
         predictor.to(self.device)
         self.models["predictor"] = predictor
         self.parameters_to_train += list(predictor.parameters())
@@ -254,12 +247,42 @@ class Trainer:
         print("-" * 80)
         print("JEPA + Depth Architecture Initialized Successfully!\n")
 
+    def initialize_fixed_vis_samples(self):
+        """
+        Initialize fixed samples for visualization in TensorBoard.
+        These samples will be used consistently across all logging steps.
+        """
+        num_samples = self.conf['num_tensorboard_samples']
+
+        # Get fixed training samples
+        train_iter = iter(self.train_loader)
+        train_batch = next(train_iter)
+        self.fixed_vis_samples['train'] = {}
+        for key, value in train_batch.items():
+            if isinstance(value, torch.Tensor):
+                self.fixed_vis_samples['train'][key] = value[:num_samples].clone()
+            else:
+                self.fixed_vis_samples['train'][key] = value
+        
+        # Get fixed validation samples
+        val_iter = iter(self.val_loader)
+        val_batch = next(val_iter)
+        self.fixed_vis_samples['val'] = {}
+        for key, value in val_batch.items():
+            if isinstance(value, torch.Tensor):
+                self.fixed_vis_samples['val'][key] = value[:num_samples].clone()
+            else:
+                self.fixed_vis_samples['val'][key] = value
+
     def set_train(self):
         """
-            Convert all models to training mode.
+            Convert all models to training mode except the target encoder.
         """
-        for m in self.models.values():
-            m.train()
+        for name, m in self.models.items():
+            if name == "target_encoder":
+                m.eval()
+            else:
+                m.train()
 
     def set_eval(self):
         """
@@ -306,12 +329,13 @@ class Trainer:
             # Update target encoder with EMA after optimizer step in JEPA mode
             if self.use_jepa:
                 current_ema = self.update_target_encoder()
-                self.writers["train"].add_scalar("ema_momentum", current_ema, self.step)
+                [self.writers[split].add_scalar("ema_momentum", current_ema, self.step) for split in ("train", "val")]
 
             duration_optimization = time.time() - before_optimization_time
 
             current_lr = self.model_optimizer.param_groups[0]['lr']
-            self.writers["train"].add_scalar("learning_rate", current_lr, self.step)
+            [self.writers[split].add_scalar("learning_rate", current_lr, self.step) for split in ("train", "val")]
+
 
             # log less frequently after the first 2000 steps to save time & disk space:
             #  - log every 10 batches if step < 2000, otherwise log every 1000 steps
@@ -348,10 +372,10 @@ class Trainer:
             # MaskCollator expects a list of tensors, not a batched tensor. Convert batch to list for mask generation
             batch_list = [imgs[i] for i in range(imgs.shape[0])]
             
-            # Generate masks using collator (returns collated_batch, masks_enc, masks_pred)
+            # Generate masks using collator
             _, masks_enc, masks_pred = self.mask_collator(batch_list)
             
-            # Move masks to device (they are lists of tensors)
+            # Move masks to device 
             masks_enc = [u.to(self.device, non_blocking=True) for u in masks_enc]
             masks_pred = [u.to(self.device, non_blocking=True) for u in masks_pred]
 
@@ -384,7 +408,10 @@ class Trainer:
         # Add JEPA loss if in JEPA mode
         if self.use_jepa and jepa_loss is not None:
             losses["jepa_loss"] = jepa_loss
-            losses["loss"] = losses["loss"] + self.jepa_loss_weight * jepa_loss
+            losses["photometric_loss"] = losses["loss"]
+           
+            # Compute total loss as weighted sum
+            losses["loss"] = losses["photometric_loss"] + self.jepa_loss_weight * losses["jepa_loss"]
             
             # Store masks for visualization
             if masks_enc_vis is not None:
@@ -486,90 +513,116 @@ class Trainer:
         print_string = "epoch {:>3} | batch {:>6} | examples/s: {:5.1f}" + " | loss: {:.5f} | time elapsed: {} | time left: {}"
         print(print_string.format(self.epoch, batch_idx, samples_per_sec, loss, sec_to_hm_str(time_so_far), sec_to_hm_str(training_time_left)))
 
-    def visualize_masked_image(self, img, mask_indices):
-        """
-        Visualize image with masked patches grayed out.
-        
-        Args:
-            img: Input image [C, H, W]
-            mask_indices: Tensor of patch indices to keep [num_patches_to_keep]
-            
-        Returns:
-            Visualization with masked regions grayed out [C, H, W]
-        """
-        if mask_indices is None:
-            return img
-        
-        C, H, W = img.shape
-        patch_size = self.conf['jepa']['patch_size']
-        
-        # Calculate number of patches
-        num_patches_h = H // patch_size
-        num_patches_w = W // patch_size
-        
-        # Create a mask for patches to keep (1 = keep, 0 = mask)
-        patch_mask = torch.zeros(num_patches_h * num_patches_w, device=img.device)
-        patch_mask[mask_indices] = 1.0
-        
-        # Reshape to spatial grid
-        patch_mask = patch_mask.reshape(num_patches_h, num_patches_w)
-        
-        # Upsample patch mask to image size
-        patch_mask = patch_mask.unsqueeze(0).unsqueeze(0)  # [1, 1, num_patches_h, num_patches_w]
-        patch_mask = F.interpolate(patch_mask, size=(H, W), mode='nearest')
-        patch_mask = patch_mask.squeeze(0)  # [1, H, W]
-        
-        # Apply mask: keep original where mask=1, gray (0.5) where mask=0
-        masked_img = img * patch_mask + 0.5 * (1 - patch_mask)
-        
-        return masked_img
-
     def log(self, mode, inputs, outputs_dict, losses, metrics):
         """
             Write an event to the tensorboard events file.
         """
         writer = self.writers[mode]
 
-        for l, v in losses.items():
-            if l not in {f"loss/{i}" for i in self.conf['loss_scales']}:
-                writer.add_scalar("{}".format(l), v, self.step)
+        if self.use_jepa:
+            # Log component losses
+            writer.add_scalar("losses/photometric_loss", losses["photometric_loss"], self.step)
+            writer.add_scalar("losses/jepa_loss", losses["jepa_loss"], self.step)
+            writer.add_scalar("losses/total", losses["loss"], self.step)
+        else:
+            # Log only the total loss
+            writer.add_scalar("loss", losses["loss"], self.step)
+
        
         for m, v in metrics.items():
             writer.add_scalar("{}".format(m), v, self.step)
 
+        # Decide which samples to visualize
+        if self.conf['use_fixed_vis_samples']: # Use fixed samples - need to run through model again
+            vis_batch_size = self.conf['num_tensorboard_samples']
+            vis_inputs = self.fixed_vis_samples[mode]
+            
+            # Temporarily create layers with visualization batch size (we need to do this because the backprojection and projection layers depend on batch size, and we want to use the same fixed samples for visualization in both train and val modes, which may have different batch sizes than the training batch size)
+            saved_backproject = self.backproject_depth
+            saved_project = self.project_3d
+            
+            self.backproject_depth = {}
+            self.project_3d = {}
+            for scale in self.conf['loss_scales']:
+                h = self.conf['im_sz'][0] // (2 ** scale)
+                w = self.conf['im_sz'][1] // (2 ** scale)
+                self.backproject_depth[scale] = BackprojectDepth(vis_batch_size, h, w).to(self.device)
+                self.project_3d[scale] = Project3D(vis_batch_size, h, w).to(self.device)
+            
+            # Run through model 
+            with torch.no_grad():
+                vis_outputs_dict, _ = self.process_batch(vis_inputs)
+            
+            # Restore original layers 
+            self.backproject_depth = saved_backproject
+            self.project_3d = saved_project
+        else: # Use current batch samples
+            vis_inputs = inputs
+            vis_outputs_dict = outputs_dict
 
-        for j in range(min(4, self.conf['bs'])):  # write a maxmimum of 4 images
-            for frame_id in self.conf['frame_ids_training']:
-                writer.add_image("input_color_image_{}/{}".format(frame_id, j), inputs[("color", frame_id, 0)][j].data, self.step)
-                if frame_id != 0:
-                    writer.add_image("warped_color_image_{}/{}".format(frame_id, j), outputs_dict[("color", frame_id, 0)][j].data, self.step)
+        for j in range(self.conf['num_tensorboard_samples']):  # write a number of num_tensorboard_samples images
+            if self.conf['separate_plots']: # log each input and warped image separately (instead of concatenating them into a single image)
+                for frame_id in self.conf['frame_ids_training']:
+                    writer.add_image("input_color_image_{}/{}".format(frame_id, j), vis_inputs[("color", frame_id, 0)][j].data, self.step)
+                    if frame_id != 0:
+                        writer.add_image("warped_color_image_{}/{}".format(frame_id, j), vis_outputs_dict[("color", frame_id, 0)][j].data, self.step)
+            else: 
+                input_imgs = []
+                for frame_id in [-1, 0, 1]:
+                    img = vis_inputs[("color", frame_id, 0)][j]
+                    input_imgs.append(img)
+                input_concat = torch.cat(input_imgs, dim=1)
+                writer.add_image(f"inputs_images/{j}_frames_-1_0_1", input_concat, self.step)
+
+                warped_imgs = []
+                for frame_id in [-1, 1]:
+                    warped = vis_outputs_dict[("color", frame_id, 0)][j]
+                    warped_imgs.append(warped)
+                warped_concat = torch.cat(warped_imgs, dim=1)
+                writer.add_image(f"warped_images/{j}_frames_-1_1", warped_concat, self.step)
 
             if not self.conf['disable_automasking']: # auto-masking stationary pixels visualization
-              writer.add_image("automask/{}".format(j), outputs_dict["identity_selection/{}".format(0)][j][None, ...], self.step)
+              writer.add_image("automask/{}".format(j), vis_outputs_dict["identity_selection/{}".format(0)][j][None, ...], self.step)
 
-            writer.add_image("predicted_disp/{}".format(j), normalize_image(outputs_dict[("disp_unscaled", 0, 0)][j]), self.step)
+            writer.add_image("predicted_disp/{}".format(j), normalize_image(vis_outputs_dict[("disp_unscaled", 0, 0)][j]), self.step)
 
             # Saving color mapped depth image
-            output_depth_map = outputs_dict[("disp_unscaled", 0, 0)][j]
+            output_depth_map = vis_outputs_dict[("disp_unscaled", 0, 0)][j]
             output_depth_map_np = output_depth_map.squeeze().detach().cpu().numpy()
             vmax = np.percentile(output_depth_map_np, 95) # The 95th percentile is used here to ignore the top 5% of depth values which might be outliers and to enhance the depth visualization.
             normalizer = mpl.colors.Normalize(vmin=output_depth_map_np.min(), vmax=vmax) 
             mapper = cm.ScalarMappable(norm=normalizer, cmap='viridis')  # choices: ['viridis', 'plasma', 'inferno'].
             color_depth_map = (mapper.to_rgba(output_depth_map_np)[:, :, :3] * 255).astype(np.uint8)
-            writer.add_image("predicted_depth_map_color/{}".format(j), color_depth_map.transpose(2,0,1), self.step)
+            writer.add_image("predicted_depth/{}".format(j), color_depth_map.transpose(2,0,1), self.step)
             
             # Log JEPA masked visualizations if in JEPA mode
-            if self.use_jepa and "jepa_masks_enc" in outputs_dict and "jepa_masks_pred" in outputs_dict:
+            if self.use_jepa and "jepa_masks_enc" in vis_outputs_dict and "jepa_masks_pred" in vis_outputs_dict:
                 # Get the input image
-                input_img = inputs[("color", 0, 0)][j]
+                input_img = vis_inputs[("color", 0, 0)][j]
 
-                # Visualize context (encoder) masked image
-                context_masked = self.visualize_masked_image(input_img, outputs_dict["jepa_masks_enc"][j])
-                writer.add_image("jepa_context_masked/{}".format(j), context_masked, self.step)
-                
-                # Visualize target (predictor) masked image
-                target_masked = self.visualize_masked_image(input_img, outputs_dict["jepa_masks_pred"][j])
-                writer.add_image("jepa_target_masked/{}".format(j), target_masked, self.step)
+                # Generate masked visualizations for context and target masks
+                context_masked = visualize_masked_image(input_img, self.conf['jepa']['patch_size'], vis_outputs_dict["jepa_masks_enc"][j])
+                target_masked = visualize_masked_image(input_img, self.conf['jepa']['patch_size'], vis_outputs_dict["jepa_masks_pred"][j])
+
+                if self.conf['separate_plots']:
+                    writer.add_image("jepa_context_masked/{}".format(j), context_masked, self.step)
+                    writer.add_image("jepa_target_masked/{}".format(j), target_masked, self.step)
+                else:
+                    # Add patch grid lines to all three images
+                    input_with_grid = add_patch_grid(input_img, self.conf['jepa']['patch_size'])
+                    context_with_grid = add_patch_grid(context_masked, self.conf['jepa']['patch_size'])
+                    target_with_grid = add_patch_grid(target_masked, self.conf['jepa']['patch_size'])
+
+                    # Create border tensors
+                    border_width = 5
+                    C, H, W = input_img.shape
+                    blue_border = torch.zeros(C, border_width, W, device=input_img.device)
+                    blue_border[2, :, :] = 1.0  # Blue channel
+                    green_border = torch.zeros(C, border_width, W, device=input_img.device)
+                    green_border[1, :, :] = 1.0  # Green channel
+                    
+                    combined_masked = torch.cat([input_with_grid, blue_border, context_with_grid, green_border, target_with_grid], dim=1) 
+                    writer.add_image("jepa_input_context_target/{}".format(j), combined_masked, self.step)
 
     def save_opts(self):
         """
@@ -739,10 +792,10 @@ class Trainer:
         with torch.no_grad():
             # Forward through target encoder
             h = self.models["target_encoder"].get_intermediate_layers(imgs, n=1)[-1]
-          
+            
             # Normalize over feature dimension
             h = F.layer_norm(h, (h.size(-1),))
-         
+          
             # Apply target masks to get regions to predict
             h = apply_masks(h, masks_pred)
             

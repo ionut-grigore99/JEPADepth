@@ -3,6 +3,7 @@ import torch
 from io import BytesIO
 import base64
 import PIL.Image as pil
+import torch.nn.functional as F
 from ptflops import get_model_complexity_info
 
 
@@ -268,7 +269,6 @@ def apply_masks_with_prefix(x, masks, n_prefix):
 
     return torch.cat(all_x, dim=0)
     
-
 def repeat_interleave_batch(x, B, repeat):
     """
         Repeat the input tensor along the batch dimension by <repeat> times.
@@ -313,3 +313,61 @@ def format_model_name(model_name):
         'pixio_vith16': 'Pixio ViT-H/16',
     }
     return model_name_map.get(model_name, model_name.title())
+
+def add_patch_grid(img, patch_size, line_color=(1.0, 1.0, 1.0), line_width=1, alpha=0.5):
+    """Add transparent patch grid lines to an image."""
+    C, H, W = img.shape
+    
+    # Clone image to avoid modifying original
+    img_with_grid = img.clone()
+    
+    # Create grid color tensor
+    grid_color = torch.tensor(line_color, device=img.device).view(3, 1, 1)
+    
+    # Draw vertical lines
+    for x in range(patch_size, W, patch_size):
+        x_start = max(0, x - line_width // 2)
+        x_end = min(W, x + line_width // 2 + 1)
+        # Blend with alpha
+        img_with_grid[:, :, x_start:x_end] = (
+            alpha * grid_color + (1 - alpha) * img_with_grid[:, :, x_start:x_end]
+        )
+    
+    # Draw horizontal lines
+    for y in range(patch_size, H, patch_size):
+        y_start = max(0, y - line_width // 2)
+        y_end = min(H, y + line_width // 2 + 1)
+        # Blend with alpha
+        img_with_grid[:, y_start:y_end, :] = (
+            alpha * grid_color + (1 - alpha) * img_with_grid[:, y_start:y_end, :]
+        )
+    
+    return img_with_grid
+
+def visualize_masked_image(img, patch_size, mask_indices):
+    """Visualize image with masked patches grayed out."""
+    if mask_indices is None:
+        return img
+    
+    C, H, W = img.shape
+    
+    # Calculate number of patches
+    num_patches_h = H // patch_size
+    num_patches_w = W // patch_size
+    
+    # Create a mask for patches to keep (1 = keep, 0 = mask)
+    patch_mask = torch.zeros(num_patches_h * num_patches_w, device=img.device)
+    patch_mask[mask_indices] = 1.0
+    
+    # Reshape to spatial grid
+    patch_mask = patch_mask.reshape(num_patches_h, num_patches_w)
+    
+    # Upsample patch mask to image size
+    patch_mask = patch_mask.unsqueeze(0).unsqueeze(0)  # [1, 1, num_patches_h, num_patches_w]
+    patch_mask = F.interpolate(patch_mask, size=(H, W), mode='nearest')
+    patch_mask = patch_mask.squeeze(0)  # [1, H, W]
+    
+    # Apply mask: keep original where mask=1, gray (0.5) where mask=0
+    masked_img = img * patch_mask + 0.5 * (1 - patch_mask)
+    
+    return masked_img

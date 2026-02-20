@@ -272,7 +272,7 @@ class DinoVisionTransformer(nn.Module):
 
     def _get_intermediate_layers_not_chunked(self, x: Tensor, masks=None, n: int = 1) -> List[Tensor]:
         x, (H, W) = self.prepare_tokens_with_masks(x)
-        
+       
         if masks is not None:
             x = apply_masks_with_prefix(x, masks, 1 + self.n_storage_tokens)
 
@@ -285,7 +285,7 @@ class DinoVisionTransformer(nn.Module):
                 rope_sincos = self.rope_embed(H=H, W=W)
             else:
                 rope_sincos = None
-
+            
             if masks is not None:
                 rope_sincos_masked = []
                 for rope_component in rope_sincos:  # Loop over sin and cos
@@ -299,6 +299,7 @@ class DinoVisionTransformer(nn.Module):
             x = blk(x, rope_sincos)
             if i in blocks_to_take:
                 output.append(x)
+
         assert len(output) == len(blocks_to_take), f"only {len(output)} / {len(blocks_to_take)} blocks found"
         return output
 
@@ -387,10 +388,13 @@ def vit_large(patch_size=16, **kwargs):
 
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
+    import lovely_tensors as lt
     from src.datasets.kitti_dataset import KITTIRAWDataset
     from src.masks.mask_collator import MaskCollator as MBMaskCollator
     from src.utils import readlines
     from src.models.dinov3.hub import *
+
+    lt.monkey_patch()
 
     model = dinov3_vits16(pretrained=False)
     weights_path = "weights/dino/dinov3_vits16.pth"
@@ -412,21 +416,19 @@ if __name__ == "__main__":
     dataset = KITTIRAWDataset('data/kitti/kitti_data', train_filenames, 192, 640, [0, -1, 1], 4, is_train=True, img_ext='.jpg') 
     dataloader = DataLoader(dataset, 2, True, num_workers=0, pin_memory=True, drop_last=True)
 
+
     model.eval()
     with torch.no_grad():
         for batch_idx, inputs in enumerate(dataloader):
             imgs = inputs["color_aug", 0, 0]
             batch_list = [imgs[i] for i in range(imgs.shape[0])]
-            _, masks_enc, masks_target = mask_collator(batch_list)
-
-            enc_mask = masks_enc[0]  # context mask indices
-            tgt_mask = masks_target[0]  # target mask indices
+            _, enc_mask, tgt_mask = mask_collator(batch_list)
 
             y1=model.get_intermediate_layers(imgs, n=4)[-1]
             print("y1 shape:", y1.shape)
       
-            y2=model.get_intermediate_layers(imgs, enc_mask, n=4)[-1]
-            print(f"y2 shape:", {y2.shape}, "masks shape:", {enc_mask.shape})
+            y2=model.get_intermediate_layers(imgs, enc_mask[0], n=4)[-1]
+            print(f"y2 shape:", {y2.shape}, "masks shape:", {enc_mask[0].shape})
       
             if batch_idx >= 0:
                 break

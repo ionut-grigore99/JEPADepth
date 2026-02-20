@@ -1,7 +1,7 @@
 # models
 # -----------
 # depth models
-model_name: "pixio" # choices=["pixio", "monodepth2"]
+model_name: "monodepth2" # choices=["pixio", "monodepth2"]
 monodepth2:
   encoder_weights_path: "weights/monodepth2/mono_640x192/encoder.pth"
   decoder_weights_path: "weights/monodepth2/mono_640x192/depth.pth"
@@ -36,7 +36,7 @@ image_path_inference: 'src/inference/input_images/img1.jpg'
                      #           'src/inference/input_images']
 num_workers: 8
 im_sz: [192, 640] # [320, 1024], [192, 640] -> H W
-bs: 8
+bs: 12
 
 
 # training
@@ -56,6 +56,9 @@ load_pretrained_pose_model: False # if set, uses pretrained PoseNet for training
 train_from_png: False # if set, trains from raw KITTI png files (instead of jpgs).
 save_frequency: 1 # number of epochs between each save.
 log_frequency: 10 # number of batches between each tensorboard log.
+separate_plots: False # if set, logs each input and warped image separately (instead of concatenating them into a single image).
+use_fixed_vis_samples: False  # If True, use same images for all tensorboard logs.
+num_tensorboard_samples: 4 # Number of samples to visualize in tensorboard.
 pose_model_type: resnet_pose_cnn # choices=["simple_pose_cnn", "resnet_pose_cnn"]
 disparity_smoothness_weight: 0.001 # 1e-3
 use_ssim: True # if set, uses SSIM in the loss. 
@@ -86,7 +89,7 @@ cityscapes_dataset_path: 'data/cityscapes' # path to Cityscapes dataset for eval
 # When enabled, uses a separate ViT encoder (context encoder) + depth decoder architecture:
 #   - Context Encoder (ViT from I-JEPA) -> Depth Decoder -> Disparity prediction -> Photometric loss (with input images)
 #   - Context Encoder -> Predictor -> JEPA loss (with Target Encoder)
-use_jepa_training: False  # Set to true to enable JEPA-style masked prediction training
+use_jepa_training: True  # Set to true to enable JEPA-style masked prediction training
 jepa:
   # Encoder selection
   encoder_size: "small"  # choices: ["small", "base", "large"]
@@ -103,8 +106,8 @@ jepa:
   enc_mask_scale: [0.85, 1.0]  # Context mask scale: covers 85-100% of image patches
   pred_mask_scale: [0.15, 0.2]  # Target mask scale: covers 15-20% of image patches  
   aspect_ratio: [0.75, 1.5]  # Aspect ratio range for rectangular masks
-  num_enc_masks: 1  # Number of context masks per image (typically 1)
-  num_pred_masks: 4  # Number of target masks per image (more = harder task)
+  num_enc_masks: 1  # Number of context masks per image 
+  num_pred_masks: 4  # Number of target masks per image 
   allow_overlap: False  # Allow overlap between context and target masks
   min_keep: 10  # Minimum number of patches to keep in masks
   
