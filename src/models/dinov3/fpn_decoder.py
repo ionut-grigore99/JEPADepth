@@ -127,6 +127,12 @@ class FPNDecoder(nn.Module):
             outputs[("disp", 0)] = disp0
 
         return outputs
+    
+    def from_pretrained(self, weights_path, device='cpu'):
+        loaded_dict_dec = torch.load(weights_path, map_location=device)
+        filtered_dict_dec = {k: v for k, v in loaded_dict_dec.items() if k in self.state_dict()}
+        self.load_state_dict(filtered_dict_dec)
+        self.eval()
 
 
 if __name__ == "__main__":

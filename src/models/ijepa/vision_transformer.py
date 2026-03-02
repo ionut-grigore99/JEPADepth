@@ -218,7 +218,6 @@ class VisionTransformerPredictor(nn.Module):
         num_patches,
         img_size=(224, 224),
         patch_size=16,
-        # embed_dim=768,
         predictor_embed_dim=384,
         depth=6,
         num_heads=12,
@@ -233,7 +232,6 @@ class VisionTransformerPredictor(nn.Module):
         **kwargs
     ):
         super().__init__()
-        # self.predictor_embed = nn.Linear(embed_dim, predictor_embed_dim, bias=True)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, predictor_embed_dim))
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         # --
@@ -250,7 +248,6 @@ class VisionTransformerPredictor(nn.Module):
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer)
             for i in range(depth)])
         self.norm = norm_layer(predictor_embed_dim)
-        # self.predictor_proj = nn.Linear(predictor_embed_dim, embed_dim, bias=True)
         # ------
         self.init_std = init_std
         trunc_normal_(self.mask_token, std=self.init_std)
@@ -290,9 +287,6 @@ class VisionTransformerPredictor(nn.Module):
         # -- Batch Size
         B = len(x) // len(masks_x)
 
-        # # -- map from encoder-dim to pedictor-dim
-        # x = self.predictor_embed(x)
-
         # -- add positional embedding to x tokens
         x_pos_embed = self.predictor_pos_embed.repeat(B, 1, 1)
         x += apply_masks(x_pos_embed, masks_x)
@@ -317,7 +311,6 @@ class VisionTransformerPredictor(nn.Module):
 
         # -- return preds for mask tokens
         x = x[:, N_ctxt:]
-        # x = self.predictor_proj(x)
 
         return x
 

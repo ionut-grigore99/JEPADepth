@@ -8,7 +8,6 @@
 # UniMatch V2: https://github.com/liheyoung/unimatch-v2
 # MiDaS: https://github.com/isl-org/midas
 # --------------------------------------------------------
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

@@ -31,6 +31,7 @@ import src.models.ijepa.vision_transformer as vit
 from src.models.ijepa.vision_transformer import load_timm_vit_into_predictor
 from src.models.dinov3.hub import dinov3_vits16, dinov3_vitb16, dinov3_vitl16
 from src.models.dinov3.fpn_decoder import FPNDecoder
+from src.models.dinov3.dino import DINODepth
 
 class Trainer:
     def __init__(self, conf):
@@ -59,6 +60,9 @@ class Trainer:
             if self.conf['model_name'].startswith("pixio"):
                 self.models["depth_model"] = DPTDepth(self.conf['pixio']['encoder'], self.conf['pixio']['pretrained_ckp'], scales=self.conf['pixio']['scales'])
                 self.models["depth_model"].from_pretrained(weights_path=self.conf['pixio']['weights_path'], device=self.device) if self.conf['load_pretrained_depth_model'] else None
+            elif self.conf['model_name'].startswith("dino"):
+                self.models["depth_model"] = DINODepth(self.conf['dino']['encoder_size'], self.conf['dino']['decoder_channels'], self.conf['dino']['scales'])
+                self.models["depth_model"].from_pretrained(encoder_weights_path=self.conf['dino']['encoder_weights_path'], decoder_weights_path=self.conf['dino']['decoder_weights_path'], device=self.device) if self.conf['load_pretrained_depth_model'] else None
             elif self.conf['model_name'] == "monodepth2":
                 self.models["depth_model"] = MonoDepth2(num_layers=self.conf['monodepth2']['num_layers'], pretrained=self.conf['monodepth2']['pretrained'], scales=self.conf['monodepth2']['scales'])
                 self.models["depth_model"].from_pretrained(encoder_weights_path=self.conf['monodepth2']['encoder_weights_path'], decoder_weights_path=self.conf['monodepth2']['decoder_weights_path'], device=self.device) if self.conf['load_pretrained_depth_model'] else None
@@ -66,9 +70,17 @@ class Trainer:
                 print("Model not recognized!")
                 exit()
             self.models["depth_model"] = self.models["depth_model"].to(self.device)
-            self.parameters_to_train += list(self.models["depth_model"].parameters())
 
-        # Prepare pose model
+            # Freeze DINOv3 encoder if requested (non-JEPA only — decoder always trains)
+            if self.conf['model_name'].startswith("dino") and self.conf['dino']['freeze_encoder']:
+                for param in self.models["depth_model"].encoder.parameters():
+                    param.requires_grad = False
+                self.parameters_to_train += list(self.models["depth_model"].decoder.parameters())
+                print("DINOv3 encoder frozen — only decoder will be trained.")
+            else:
+                self.parameters_to_train += list(self.models["depth_model"].parameters())
+
+        # Prepare pose model 
         if self.conf['pose_model_type']=="simple_pose_cnn":
             self.models["pose_model"] = SimplePoseCNN(self.num_pose_frames)
             self.models["pose_model"].from_pretrained(weights_path=self.conf['simple_pose_cnn']['weights_path'], device=self.device) if self.conf['load_pretrained_pose_model'] else None
@@ -168,9 +180,10 @@ class Trainer:
         encoder_size = jepa_conf['encoder_size']  
         model_map = {"small": dinov3_vits16, "base": dinov3_vitb16, "large": dinov3_vitl16}
         context_encoder = model_map[encoder_size](pretrained=False)
-        weights_path = jepa_conf['encoder_weights_path']
-        state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
-        context_encoder.load_state_dict(state_dict)
+        if jepa_conf['use_pretrained']:
+            weights_path = jepa_conf['encoder_weights_path']
+            state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
+            context_encoder.load_state_dict(state_dict)
         context_encoder.to(self.device)
         self.models["context_encoder"] = context_encoder
         self.parameters_to_train += list(context_encoder.parameters())
@@ -193,12 +206,12 @@ class Trainer:
             num_patches=self.conf['im_sz'][0] // context_encoder.patch_size * self.conf['im_sz'][1] // context_encoder.patch_size,
             img_size=self.conf['im_sz'], 
             patch_size=context_encoder.patch_size,
-            # embed_dim=context_encoder.embed_dim,
             predictor_embed_dim=predictor_embed_dim,
             depth=predictor_depth,
             num_heads=context_encoder.num_heads,
         )
-        predictor = load_timm_vit_into_predictor(predictor)
+        if jepa_conf['use_pretrained']:
+            predictor = load_timm_vit_into_predictor(predictor)
         predictor.to(self.device)
         self.models["predictor"] = predictor
         self.parameters_to_train += list(predictor.parameters())
@@ -243,6 +256,19 @@ class Trainer:
         # JEPA loss weight and meters
         self.jepa_loss_weight = jepa_conf['loss_weight']
         print(f"   JEPA Loss Weight: {self.jepa_loss_weight}")
+
+        # Ablation: prediction space ("representation" or "pixel")
+        self.jepa_prediction_space = jepa_conf['prediction_space']
+        print(f"   JEPA Prediction Space: {self.jepa_prediction_space}")
+
+        if self.jepa_prediction_space == "pixel":
+            P = jepa_conf['patch_size']
+            D = context_encoder.embed_dim
+            pixel_proj = torch.nn.Linear(D, 3 * P * P, bias=True)
+            pixel_proj.to(self.device)
+            self.models["pixel_proj"] = pixel_proj
+            self.parameters_to_train += list(pixel_proj.parameters())
+            print(f"   Pixel Projection Head: Linear({D} -> {3 * P * P})")
         
         print("-" * 80)
         print("JEPA + Depth Architecture Initialized Successfully!\n")
@@ -777,41 +803,75 @@ class Trainer:
     def compute_jepa_loss(self, imgs, masks_enc, masks_pred):
         """
         Compute JEPA masked prediction loss.
-        
+        Two modes for prediction space:
+          - "representation" (default): loss in encoder feature space  -> abstract targets (I-JEPA paper)
+          - "pixel"                   : loss in pixel space            -> ablation (expected worse)
+
         Args:
             imgs: Input images [B, 3, H, W]
             masks_enc: Context masks for encoder
             masks_pred: Target masks for prediction
-            
+
         Returns:
             JEPA loss (scalar tensor)
         """
         B = imgs.shape[0]
-        
-        # Target branch (frozen target encoder)
-        with torch.no_grad():
-            # Forward through target encoder
-            h = self.models["target_encoder"].get_intermediate_layers(imgs, n=1)[-1]
-            
-            # Normalize over feature dimension
-            h = F.layer_norm(h, (h.size(-1),))
-          
-            # Apply target masks to get regions to predict
-            h = apply_masks(h, masks_pred)
-            
-            # Repeat for each context mask
-            h = repeat_interleave_batch(h, B, repeat=len(masks_enc))
 
-        # Context branch (trainable encoder + predictor)
-        # Forward through context encoder
-        z = self.models["context_encoder"].get_intermediate_layers(imgs, masks_enc[0], n=1)[-1]
-        
-        # Forward through predictor to predict target regions
-        z = self.models["predictor"](z, masks_enc, masks_pred)
-        
-        # Compute smooth L1 loss between predictions and targets
-        loss = F.smooth_l1_loss(z, h)
-        
+        if self.jepa_prediction_space == "representation": # Default: predict in representation space
+            # Target branch (frozen target encoder)
+            with torch.no_grad():
+                # Forward through target encoder
+                h = self.models["target_encoder"].get_intermediate_layers(imgs, n=1)[-1]
+                
+                # Normalize over feature dimension
+                h = F.layer_norm(h, (h.size(-1),))
+                
+                # Apply target masks to get regions to predict
+                h = apply_masks(h, masks_pred)
+                
+                # Repeat for each context mask
+                h = repeat_interleave_batch(h, B, repeat=len(masks_enc))
+
+            # Context branch (trainable encoder + predictor)
+            z = self.models["context_encoder"].get_intermediate_layers(imgs, masks_enc[0], n=1)[-1]
+            
+            # Forward through predictor to predict target regions
+            z = self.models["predictor"](z, masks_enc, masks_pred)
+
+            # Compute smooth L1 loss between predictions and targets in representation space
+            loss = F.smooth_l1_loss(z, h)
+
+        elif self.jepa_prediction_space == "pixel": # Ablation: predict in pixel space (should perform worse than representation space)
+            # Target: raw pixel values of masked patches
+            P = self.conf['jepa']['patch_size']
+            H, W = imgs.shape[2], imgs.shape[3]
+            num_patches_h = H // P
+            num_patches_w = W // P
+            N = num_patches_h * num_patches_w
+      
+            # Patchify image: [B, N, P*P*3]
+            with torch.no_grad():
+                imgs_patches = imgs.unfold(2, P, P).unfold(3, P, P)           # [B, 3, nH, nW, P, P]
+                imgs_patches = imgs_patches.permute(0, 2, 3, 1, 4, 5)         # [B, nH, nW, 3, P, P]
+                imgs_patches = imgs_patches.reshape(B, N, 3 * P * P)          # [B, N, 3*P*P]
+
+                # Select target patches for each target mask
+                h = apply_masks(imgs_patches, masks_pred)                      # [B, N_target, 3*P*P]
+                h = repeat_interleave_batch(h, B, repeat=len(masks_enc))
+
+            # Context branch: encode visible patches, predict target pixel patches
+            z = self.models["context_encoder"].get_intermediate_layers(imgs, masks_enc[0], n=1)[-1]
+            z = self.models["predictor"](z, masks_enc, masks_pred)             # [B*nenc, N_target, D]
+
+            # Project predictor output to pixel space  [B*nenc, N_target, 3*P*P]
+            z = self.models["pixel_proj"](z)
+
+            loss = F.smooth_l1_loss(z, h)
+
+        else:
+            raise ValueError(f"Unknown jepa.prediction_space: '{self.jepa_prediction_space}'. "
+                             f"Choose 'representation' or 'pixel'.")
+
         return loss
     
     def update_target_encoder(self):

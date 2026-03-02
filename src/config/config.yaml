@@ -1,7 +1,7 @@
 # models
 # -----------
 # depth models
-model_name: "monodepth2" # choices=["pixio", "monodepth2"]
+model_name: "dino" # choices=["pixio", "dino", "monodepth2"]
 monodepth2:
   encoder_weights_path: "weights/monodepth2/mono_640x192/encoder.pth"
   decoder_weights_path: "weights/monodepth2/mono_640x192/depth.pth"
@@ -12,6 +12,30 @@ pixio:
   weights_path: null
   encoder: "pixio_vitb16" # choices=["pixio_vitb16", "pixio_vitl16", "pixio_vith16"]
   pretrained_ckp: null
+  scales: [0, 1, 2, 3] 
+litemono:
+  model_type: "lite-mono" # choices=["lite-mono", "lite-mono-8m"]
+  encoder_weights_path: "weights/litemono/encoder.pth"
+  decoder_weights_path: "weights/litemono/depth.pth"
+  scales: [0, 1, 2]
+diffnet:
+  encoder_weights_path: "weights/diffnet/encoder.pth"
+  decoder_weights_path: "weights/diffnet/depth.pth"
+  scales: [0, 1, 2, 3]
+monovit:
+  encoder_weights_path: "weights/monovit/encoder.pth"
+  decoder_weights_path: "weights/monovit/depth.pth"
+cadepth:
+  num_layers: 50
+  encoder_weights_path: "weights/cadepth/encoder.pth"
+  decoder_weights_path: "weights/cadepth/depth.pth"
+dino:
+  encoder_size: "small" # choices=["small", "base", "large"]
+  decoder_channels: 256
+  freeze_encoder: True # if set, freezes the DINOv3 encoder during training (only trains the decoder). Ignored when use_jepa=True.
+  encoder_weights_path: "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/context_encoder.pth"
+  decoder_weights_path: "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/depth_decoder.pth"
+  weights_path: "tensorboard/train/dino/20260228-224926/models/weights_epoch_19/depth_model.pth" # if set, will load the entire model from this path instead of loading encoder and decoder separately (used for non-JEPA models where encoder and decoder are not saved separately).
   scales: [0, 1, 2, 3] 
 # pose models
 resnet_pose_cnn:
@@ -72,7 +96,7 @@ max_depth: 100.0 # 80.0, 100.0
 
 # evaluation
 # -----------
-evaluation_split: eigen_benchmark # choices=["eigen", "eigen_benchmark", "benchmark"]
+evaluation_split: eigen # choices=["eigen", "eigen_benchmark", "benchmark"]
 evaluation_mode: mono # choices=["mono", "stereo"]
 evaluation_post_process: False # if set will perform the flipping post processing from the original Monodepth paper (https://arxiv.org/pdf/1609.03677, pg.5, bottom-right).
 prediction_depth_scale_factor: 1 # if set multiplies predictions by this number.
@@ -89,9 +113,9 @@ cityscapes_dataset_path: 'data/cityscapes' # path to Cityscapes dataset for eval
 # When enabled, uses a separate ViT encoder (context encoder) + depth decoder architecture:
 #   - Context Encoder (ViT from I-JEPA) -> Depth Decoder -> Disparity prediction -> Photometric loss (with input images)
 #   - Context Encoder -> Predictor -> JEPA loss (with Target Encoder)
-use_jepa_training: True  # Set to true to enable JEPA-style masked prediction training
+use_jepa_training: False  # Set to true to enable JEPA-style masked prediction training
 jepa:
-  # Encoder selection
+  # Encoder network
   encoder_size: "small"  # choices: ["small", "base", "large"]
   encoder_weights_path: "weights/dino/dinov3_vits16.pth"  # Path to pretrained DINOv3 weights
 
@@ -103,8 +127,8 @@ jepa:
   
   # Masking strategy
   patch_size: 16  # Patch size for masking (should match encoder patch size).
-  enc_mask_scale: [0.85, 1.0]  # Context mask scale: covers 85-100% of image patches
-  pred_mask_scale: [0.15, 0.2]  # Target mask scale: covers 15-20% of image patches  
+  enc_mask_scale: [0.85, 1.0]  # Context mask scale: each context block covers 85-100% of image patches
+  pred_mask_scale: [0.15, 0.2]  # Target mask scale: each prediction block covers 15-20% of image patches  
   aspect_ratio: [0.75, 1.5]  # Aspect ratio range for rectangular masks
   num_enc_masks: 1  # Number of context masks per image 
   num_pred_masks: 4  # Number of target masks per image 
@@ -117,4 +141,10 @@ jepa:
   
   # EMA (Exponential Moving Average) for target encoder  
   ema: [0.996, 1.0]  # Momentum schedule [start, end]. Higher = slower updates.
+
+  # Ablation: representation vs pixel prediction
+  #  - "representation" (default, I-JEPA style): loss computed on encoder patch tokens -> abstract targets
+  #  - "pixel": loss computed on reconstructed image patches -> pixel-level targets (expected to be worse)
+  prediction_space: "representation"  # choices: ["representation", "pixel"]
+  use_pretrained: True # if set, uses ImageNet pretrained encoder and predictor for JEPA training. If false, both encoder and predictor are initialized randomly.
 

@@ -349,6 +349,12 @@ class DinoVisionTransformer(nn.Module):
             return ret
         else:
             return self.head(ret["x_norm_clstoken"])
+        
+    def from_pretrained(self, weights_path, device='cpu'):
+        loaded_dict_dec = torch.load(weights_path, map_location=device)
+        filtered_dict_dec = {k: v for k, v in loaded_dict_dec.items() if k in self.state_dict()}
+        self.load_state_dict(filtered_dict_dec)
+        self.eval()
 
 
 def vit_small(patch_size=16, **kwargs):

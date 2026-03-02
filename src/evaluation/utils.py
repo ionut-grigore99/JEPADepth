@@ -43,7 +43,7 @@ def compute_errors(gt, pred):
         rmse = (gt - pred) ** 2
         rmse = np.sqrt(rmse.mean())
 
-        rmse_log = (np.log(gt) - np.log(pred)) ** 2
+        rmse_log = (np.log10(gt) - np.log10(pred)) ** 2
         rmse_log = np.sqrt(rmse_log.mean())
 
         abs_rel = np.mean(np.abs(gt - pred) / gt)

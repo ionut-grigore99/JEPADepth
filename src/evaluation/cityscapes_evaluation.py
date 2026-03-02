@@ -14,7 +14,11 @@ import lovely_tensors as lt
 import time
 
 from src.models.pixio.dpt import DPTDepth
+from src.models.diffnet.diffnet import DiffNet
+from src.models.cadepth.cadepth import CADepth
+from src.models.litemono.litemono import LiteMonoModel
 from src.models.monodepth2.monodepth2 import MonoDepth2
+from src.models.dinov3.dino import DINODepth
 from src.utils import disp_to_depth, readlines, count_parameters
 from src.datasets.cityscapes_dataset import CityscapesDataset
 from src.evaluation.utils import compute_errors, batch_post_process_disparity, STEREO_SCALE_FACTOR, create_evaluation_html_report
@@ -45,6 +49,22 @@ def evaluate(conf):
         if conf['model_name'].startswith("pixio"):
             model = DPTDepth(conf['pixio']['encoder'], conf['pixio']['pretrained_ckp'], scales=conf['pixio']['scales'])
             model.from_pretrained(weights_path=conf['pixio']['weights_path'], device=device)
+        elif conf['model_name'] == "dino":
+            model = DINODepth(conf['dino']['encoder_size'], conf['dino']['decoder_channels'], scales=conf['dino']['scales'])
+            model.from_pretrained(encoder_weights_path=conf['dino']['encoder_weights_path'], decoder_weights_path=conf['dino']['decoder_weights_path'], weights_path=conf['dino']['weights_path'], device=device)
+        elif conf['model_name'] == "litemono":
+            model = LiteMonoModel(conf['litemono']['model_type'], conf['im_sz'][0], conf['im_sz'][1], scales=conf['litemono']['scales'])
+            model.from_pretrained(encoder_weights_path=conf['litemono']['encoder_weights_path'], decoder_weights_path=conf['litemono']['decoder_weights_path'], device=device)
+        elif conf['model_name'] == "diffnet":
+            model = DiffNet(scales=conf['diffnet']['scales'])
+            model.from_pretrained(encoder_weights_path=conf['diffnet']['encoder_weights_path'], decoder_weights_path=conf['diffnet']['decoder_weights_path'], device=device)
+        elif conf['model_name'] == "monovit":
+            from src.models.monovit.monovit import MonoViT
+            model = MonoViT()
+            model.from_pretrained(encoder_weights_path=conf['monovit']['encoder_weights_path'], decoder_weights_path=conf['monovit']['decoder_weights_path'], device=device)
+        elif conf['model_name'] == "cadepth":
+            model = CADepth(num_layers=conf['cadepth']['num_layers'])
+            model.from_pretrained(encoder_weights_path=conf['cadepth']['encoder_weights_path'], decoder_weights_path=conf['cadepth']['decoder_weights_path'], device=device)
         elif conf['model_name'] == "monodepth2":
             model = MonoDepth2(num_layers=conf['monodepth2']['num_layers'], pretrained=conf['monodepth2']['pretrained'], scales=conf['monodepth2']['scales'])
             model.from_pretrained(encoder_weights_path=conf['monodepth2']['encoder_weights_path'], decoder_weights_path=conf['monodepth2']['decoder_weights_path'], device=device)
