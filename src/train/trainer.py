@@ -16,7 +16,7 @@ from io import StringIO
 from src.config.conf import Conf
 from src.models.posenet.simple_pose_cnn import SimplePoseCNN
 from src.models.posenet.resnet_pose_cnn import ResNetPoseCNN 
-from src.models.pixio.dpt import DPTDepth
+from src.models.pixio.dpt import DPTDepth, DPTHead
 from src.models.monodepth2.monodepth2 import MonoDepth2
 from src.models.layers import *
 from src.datasets.kitti_dataset import KITTIRAWDataset
@@ -61,7 +61,7 @@ class Trainer:
                 self.models["depth_model"] = DPTDepth(self.conf['pixio']['encoder'], self.conf['pixio']['pretrained_ckp'], scales=self.conf['pixio']['scales'])
                 self.models["depth_model"].from_pretrained(weights_path=self.conf['pixio']['weights_path'], device=self.device) if self.conf['load_pretrained_depth_model'] else None
             elif self.conf['model_name'].startswith("dino"):
-                self.models["depth_model"] = DINODepth(self.conf['dino']['encoder_size'], self.conf['dino']['decoder_channels'], self.conf['dino']['scales'])
+                self.models["depth_model"] = DINODepth(self.conf['dino']['encoder_size'], self.conf['dino']['decoder_channels'], self.conf['dino']['scales'], decoder_type=self.conf['dino']['decoder_type'])
                 self.models["depth_model"].from_pretrained(encoder_weights_path=self.conf['dino']['encoder_weights_path'], decoder_weights_path=self.conf['dino']['decoder_weights_path'], device=self.device) if self.conf['load_pretrained_depth_model'] else None
             elif self.conf['model_name'] == "monodepth2":
                 self.models["depth_model"] = MonoDepth2(num_layers=self.conf['monodepth2']['num_layers'], pretrained=self.conf['monodepth2']['pretrained'], scales=self.conf['monodepth2']['scales'])
@@ -219,11 +219,21 @@ class Trainer:
         
         # Initialize Depth Decoder
         print("Creating Depth Decoder...")
-        depth_decoder = FPNDecoder(
-            in_channels=context_encoder.embed_dim,
-            decoder_channels=jepa_conf['depth_decoder_channels'],
-            scales=self.conf['loss_scales']
-        )
+        if jepa_conf['decoder_type'] == "fpn":
+            depth_decoder = FPNDecoder(
+                in_channels=context_encoder.embed_dim,
+                decoder_channels=jepa_conf['depth_decoder_channels'],
+                scales=self.conf['loss_scales']
+            )
+        elif jepa_conf['decoder_type'] == "dpt":
+            depth_decoder = DPTHead(
+                nclass=1,
+                in_channels=context_encoder.embed_dim,
+                features=jepa_conf['depth_decoder_channels'],
+                out_channels=[256, 512, 1024, 1024],
+                use_bn=False,
+                scales=self.conf['loss_scales'],
+            )
         depth_decoder.to(self.device)
         self.models["depth_decoder"] = depth_decoder
         self.parameters_to_train += list(depth_decoder.parameters())
@@ -409,7 +419,21 @@ class Trainer:
             features = self.models["context_encoder"].get_intermediate_layers(imgs, n=self.num_scales, reshape=True)
             
             # Forward through depth decoder to get disparity maps 
-            disp_maps = self.models["depth_decoder"](features)
+            if self.conf['jepa']['decoder_type'] == "fpn":
+                disp_maps = self.models["depth_decoder"](features)
+            else:  # "dpt":
+                h, w = imgs.shape[-2:]
+                raw = self.models["depth_decoder"](features)
+
+                # Interpolate to target sizes and apply sigmoid
+                disp_maps = {}
+                for s in self.conf['loss_scales']:
+                    scale_factor = 1.0 / (2 ** s)
+                    target_h = int(h * scale_factor)
+                    target_w = int(w * scale_factor)
+                    disp_maps[("disp", s)] = torch.sigmoid(
+                        F.interpolate(raw[("disp", s)], (target_h, target_w), mode="bilinear", align_corners=True)
+                    )
             
             # Compute JEPA loss (this uses masked encoder outputs)
             jepa_loss = self.compute_jepa_loss(imgs, masks_enc, masks_pred)

@@ -48,7 +48,7 @@ def evaluate(conf):
         model = DPTDepth(conf['pixio']['encoder'], conf['pixio']['pretrained_ckp'], scales=conf['pixio']['scales'])
         model.from_pretrained(weights_path=conf['pixio']['weights_path'], device=device)
     elif conf['model_name'] == "dino":
-        model = DINODepth(conf['dino']['encoder_size'], conf['dino']['decoder_channels'], scales=conf['dino']['scales'])
+        model = DINODepth(conf['dino']['encoder_size'], conf['dino']['decoder_channels'], scales=conf['dino']['scales'], decoder_type=conf['dino']['decoder_type'])
         model.from_pretrained(encoder_weights_path=conf['dino']['encoder_weights_path'], decoder_weights_path=conf['dino']['decoder_weights_path'], weights_path=conf['dino']['weights_path'], device=device)
     elif conf['model_name'] == "litemono":
         model = LiteMonoModel(conf['litemono']['model_type'], conf['im_sz'][0], conf['im_sz'][1], scales=conf['litemono']['scales'])

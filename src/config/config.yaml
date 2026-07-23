@@ -32,10 +32,11 @@ cadepth:
 dino:
   encoder_size: "small" # choices=["small", "base", "large"]
   decoder_channels: 256
-  freeze_encoder: True # if set, freezes the DINOv3 encoder during training (only trains the decoder). Ignored when use_jepa=True.
-  encoder_weights_path: "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/context_encoder.pth"
-  decoder_weights_path: "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/depth_decoder.pth"
-  weights_path: "tensorboard/train/dino/20260228-224926/models/weights_epoch_19/depth_model.pth" # if set, will load the entire model from this path instead of loading encoder and decoder separately (used for non-JEPA models where encoder and decoder are not saved separately).
+  decoder_type: "dpt" # choices=["fpn", "dpt"] 
+  freeze_encoder: False # if set, freezes the DINOv3 encoder during training (only trains the decoder). Ignored when use_jepa=True.
+  encoder_weights_path: "tensorboard/train/jepa_small/20260507-150223/models/weights_epoch_19/context_encoder.pth"
+  decoder_weights_path: "tensorboard/train/jepa_small/20260507-150223/models/weights_epoch_19/depth_decoder.pth"
+  weights_path: "tensorboard/train/dino/20260507-115810/models/weights_epoch_19/depth_model.pth" # if set, will load the entire model from this path instead of loading encoder and decoder separately (used for non-JEPA models where encoder and decoder are not saved separately).
   scales: [0, 1, 2, 3] 
 # pose models
 resnet_pose_cnn:
@@ -113,13 +114,14 @@ cityscapes_dataset_path: 'data/cityscapes' # path to Cityscapes dataset for eval
 # When enabled, uses a separate ViT encoder (context encoder) + depth decoder architecture:
 #   - Context Encoder (ViT from I-JEPA) -> Depth Decoder -> Disparity prediction -> Photometric loss (with input images)
 #   - Context Encoder -> Predictor -> JEPA loss (with Target Encoder)
-use_jepa_training: False  # Set to true to enable JEPA-style masked prediction training
+use_jepa_training: True  # Set to true to enable JEPA-style masked prediction training
 jepa:
   # Encoder network
   encoder_size: "small"  # choices: ["small", "base", "large"]
   encoder_weights_path: "weights/dino/dinov3_vits16.pth"  # Path to pretrained DINOv3 weights
 
   # Decoder configuration
+  decoder_type: "dpt"  # choices: ["fpn", "dpt"]
   depth_decoder_channels: 256  # Number of channels in the depth decoder (after lateral projections)
   
   # Training configuration

@@ -140,6 +140,11 @@ class DPTHead(nn.Module):
             outputs[("disp", s)] = self.multi_scale_convs[f"dispconv_{s}"](feat)
         
         return outputs
+    
+    def from_pretrained(self, weights_path, device='cpu'):
+        loaded_dict_dec = torch.load(weights_path, map_location=device)
+        filtered_dict_dec = {k: v for k, v in loaded_dict_dec.items() if k in self.state_dict()}
+        self.load_state_dict(filtered_dict_dec)
 
 
 class DPTDepth(nn.Module):
@@ -182,7 +187,7 @@ class DPTDepth(nn.Module):
             ), dim=2) for feat in features
         ]
         features = (feat.permute(0, 2, 1).reshape(feat.shape[0], feat.shape[-1], patch_h, patch_w) for feat in features)
-        
+
         out = self.head(features)
         
         # Return dictionary with multi-scale outputs, interpolated and sigmoids applied
@@ -208,7 +213,7 @@ if __name__ == "__main__":
 
     encoder = 'pixio_vith16'
     pretrained_ckp = None
-    scales = [0] # [0] or [0, 1, 2, 3]
+    scales = [0, 1, 2, 3] # [0] or [0, 1, 2, 3]
 
     input = torch.randn(1, 3, 192, 640).to(device)
     model = DPTDepth(encoder=encoder, pretrained_ckp=pretrained_ckp, scales=scales).to(device)

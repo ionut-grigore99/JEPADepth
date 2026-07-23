@@ -50,33 +50,32 @@ MODELS_TO_COMPARE = [
         "scales": [0, 1, 2, 3]
     },
     {
-        # "display_name": "DINOv3 (w/o JEPA)",
-        "display_name": "JEPADepth (ours)",
+        "display_name": "DINOv3 (w/o JEPA)",
         "model_name": "dino",
         "encoder_size": "small",
         "decoder_channels": 256,
         "encoder_weights_path": None,
         "decoder_weights_path": None,
         "weights_path": "tensorboard/train/dino/20260228-224926/models/weights_epoch_19/depth_model.pth",
-        "scales": [0, 1, 2, 3]
+        "scales": [0, 1, 2, 3],
+        "decoder_type": "fpn"
     },
-    # {
-    #     # "display_name": "DINOv3 (w/o JEPA)",
-    #     "display_name": "JEPADepth (ours)",
-    #     "model_name": "monovit",
-    #     "encoder_weights_path": "weights/monovit/encoder.pth",
-    #     "decoder_weights_path": "weights/monovit/depth.pth",
-    # },
     {
-        # "display_name": "JEPADepth (ours)",
-        "display_name": "DINOv3 (w/o JEPA)",
+        "display_name": "MonoViT",
+        "model_name": "monovit",
+        "encoder_weights_path": "weights/monovit/encoder.pth",
+        "decoder_weights_path": "weights/monovit/depth.pth",
+    },
+    {
+        "display_name": "JEPADepth (ours)",
         "model_name": "dino",
         "encoder_size": "small",
         "decoder_channels": 256,
         "encoder_weights_path": "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/context_encoder.pth",
         "decoder_weights_path": "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/depth_decoder.pth",
         "weights_path": None,
-        "scales": [0, 1, 2, 3]
+        "scales": [0, 1, 2, 3],
+        "decoder_type": "fpn"
     },
     # Add more models here following the same pattern
 ]
@@ -196,6 +195,7 @@ def load_model(model_cfg: dict, device: torch.device):
             model_cfg["encoder_size"],
             model_cfg["decoder_channels"],
             model_cfg["scales"],
+            model_cfg["decoder_type"],
         )
         model.from_pretrained(
             encoder_weights_path=model_cfg["encoder_weights_path"],
