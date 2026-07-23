@@ -12,3 +12,4 @@ tensorboard/
 weights/
 htmls/
 src/inference/output_images/
+notebooks/.ipynb_checkpoints
