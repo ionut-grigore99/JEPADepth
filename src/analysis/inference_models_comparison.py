@@ -61,12 +61,6 @@ MODELS_TO_COMPARE = [
         "decoder_type": "fpn"
     },
     {
-        "display_name": "MonoViT",
-        "model_name": "monovit",
-        "encoder_weights_path": "weights/monovit/encoder.pth",
-        "decoder_weights_path": "weights/monovit/depth.pth",
-    },
-    {
         "display_name": "JEPADepth (ours)",
         "model_name": "dino",
         "encoder_size": "small",

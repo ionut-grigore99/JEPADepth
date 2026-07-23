@@ -26,8 +26,58 @@ environment to provide multiple views of that scene.
 The seminal work in this field is "*Digging Into Self-Supervised Monocular Depth Estimation*" (https://arxiv.org/pdf/1806.01260.pdf) upon which 
 almost every self-supervised depth estimation method/paper/repo is based on (also our repo).
 
-![img.png](assets/Theory_1_white.png)
-![img_2.png](assets/Theory_2_white.png)
+- Let $I_t \in \mathbb{R}^{H \times W \times 3}, \ t \in \{-1, 0, 1\}$ be a frame in a monocular video sequence captured by a moving camera, where $t$ is the frame time index.
+
+- Similarly, let $D_t \in \mathbb{R}^{H \times W}$ denote the depth map corresponding to image $I_t$.
+
+- The camera pose changes from time $0$ to time $t$, $t \in \{-1, 1\}$ is encoded by the $3 \times 3$ rotation matrix $R_t$ and the translation vector $t_t$. We obtain the $4 \times 4$ camera transformation matrix thus:
+
+$$
+M_t =
+\begin{bmatrix}
+R_t & t_t \\
+0 & 1
+\end{bmatrix}
+$$
+
+Our aim is to train two CNN networks to simultaneously estimate the pose of the camera, and the structure of the scene respectively:
+
+- $M_t = \Theta_{pose}(I_t)$
+- $D_t = \Theta_{depth}(I_t)$
+
+Self-supervised depth prediction reformulates the learning task as a novel view-synthesis problem.
+
+Specifically, during training, we let the coupled network synthesise the photo-consistency appearance of a target frame from another viewpoint of the source frame. We treat the depth map as an intermediate variable to constrain the network to complete the image synthesis task.
+
+- Let $(u, v) \in \mathbb{R}^2$ be the calibrated coordinates of a pixel in image $I_0$. In this case, let the origin $(0, 0)$ be the top-left of the image.
+
+- In the process of imaging, a three-dimensional point $(X, Y, Z) \in \mathbb{R}^3$ projects onto $(u, v)$ through a perspective projection operator.
+
+- Suppose that the transformation matrix $M_t$ encodes the pose change of the camera from time $0$ to time $t$ and the equation below is the perspective projection operator:
+
+$$\pi(X,Y,Z) =\left(f_x \frac{X}{Z} + c_x,\ f_y \frac{Y}{Z} + c_y\right)=(u,v)$$
+
+where $(f_x, f_y, c_x, c_y)$ are the camera intrinsic parameters.
+
+- Therefore, given a depth map $D(u,v)$, a 2D image point $(u,v)$ backprojects to a 3D point $(X,Y,Z)$ through backprojection operator:
+
+$$\pi^{-1}(u,v,D(u,v)) =D(u,v)\left(\frac{u - c_x}{f_x},\ \frac{v - c_y}{f_y},\ 1\right)=(X,Y,Z)$$
+
+- Then the corresponding pixels in image $I_t$ can be computed as:
+
+$$(u',v') =\pi\left(M_t \pi^{-1}(u,v,D(u,v))\right)=g(u,v \mid D(u,v), M_t)$$
+
+- We project the pixels of an image to form a novel synthetic view, as shown in the equation above. However, the projected coordinates $(u',v')$ are continuous values. To obtain $I^S(u,v)$ we include a differentiable bilinear sampling mechanism, as proposed in spatial transformer networks.
+
+- We can now linearly interpolate the values of the 4-pixel neighbours: top-left, top-right, bottom-left, bottom-right of $I(u',v')$ to give the RGB intensities as follows:
+
+$$I^S(u,v) =\sum_u \sum_vw^{uv} I(u',v')$$
+
+where $w^{uv}$ is linearly proportional to the spatial proximity between $(u,v)$ and $(u',v')$, and
+
+$$
+\sum_{u,v} w^{uv} = 1
+$$
 
 <br />
 Self-supervised framework:
@@ -222,6 +272,13 @@ To verify the correctness of the KITTI evaluation implementation, you can compar
 ```
 *Reference: Table 1 (page 6) and Table 7 (page 14) of the Monodepth2 paper*
 
+**Expected results with  Monodepth2 (640x192) on Eigen split** (monocular, no post-processing, with median scaling):
+```
+|  abs_rel |   sq_rel |     rmse | rmse_log |       a1 |       a2 |       a3 | 
+|   0.115  |   0.901  |   4.861  |   0.193  |   0.877  |   0.959  |   0.981  |
+```
+*Reference: Table 11 (page 16) of the Monodepth2 paper*
+
 **Expected results with Monodepth2 (640×192) on Eigen Benchmark split** (monocular, no post-processing, with median scaling):
 ```
 |  abs_rel |   sq_rel |     rmse | rmse_log |       a1 |       a2 |       a3 | 
@@ -258,7 +315,7 @@ To verify the correctness of the Make3D evaluation implementation, you can compa
 **Expected results with Monodepth2 (640×192)**:
 ```
 |  abs_rel |   sq_rel |     rmse | rmse_log | 
-|    0.321 |    3.377 |    7.252 |    0.375 | 
+|    0.321 |    3.377 |    7.252 |    0.163 | 
 ```
 *Reference: Table 3 (page 7) of the Monodepth2 paper*
 

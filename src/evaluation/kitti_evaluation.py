@@ -1,10 +1,15 @@
 '''
 Script to evaluate a depth estimation model on the KITTI dataset.
-NOTE: In order to check the correctness of this evaluation code, please compare its results to those obtained in the Monodepth2 paper (Table 1 - page 6 and Table 7 - page 14).
+NOTE: In order to check the correctness of this evaluation code, please compare its results to those obtained in the Monodepth2 paper (Table 1 - page 6, Table 7 - page 14 and Table 11 - page 16).
 Expected results when evaluating Monodepth2 model with 1024x320 pretrained weights (using the 'eigen' split, monocular mode, without post-processing, with median scaling) are:
 
 |  abs_rel |   sq_rel |     rmse | rmse_log |       a1 |       a2 |       a3 | 
 |   0.115  |   0.884  |   4.700  |   0.190  |   0.879  |   0.961  |   0.982  |
+
+Expected results when evaluating Monodepth2 model with 640x192 pretrained weights (using the 'eigen' split, monocular mode, without post-processing, with median scaling) are:
+
+|  abs_rel |   sq_rel |     rmse | rmse_log |       a1 |       a2 |       a3 | 
+|   0.115  |   0.901  |   4.861  |   0.193  |   0.877  |   0.959  |   0.981  |
 
 Expected results when evaluating Monodepth2 model with 640x192 pretrained weights (using the 'eigen_benchmark' split, monocular mode, without post-processing, with median scaling) are:
 

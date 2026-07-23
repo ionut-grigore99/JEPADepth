@@ -15,9 +15,10 @@ from src.utils import format_number, format_model_name
 # Therefore, to convert our stereo predictions to real-world scale we multiply our depths by 5.4.
 STEREO_SCALE_FACTOR = 5.4
 
-def compute_errors(gt, pred):
+def compute_errors(gt, pred, use_log10=False):
     """
         Computation of error metrics between predicted and ground truth depths.
+        use_log10: log base for rmse_log. False -> natural log (KITTI / Cityscapes / training convention); True -> log10 (Make3D convention).
     """
     if isinstance(gt, torch.Tensor) and isinstance(pred, torch.Tensor):
         thresh = torch.max((gt / pred), (pred / gt))
@@ -28,7 +29,8 @@ def compute_errors(gt, pred):
         rmse = (gt - pred) ** 2
         rmse = torch.sqrt(rmse.mean())
 
-        rmse_log = (torch.log(gt) - torch.log(pred)) ** 2
+        log = torch.log10 if use_log10 else torch.log
+        rmse_log = (log(gt) - log(pred)) ** 2
         rmse_log = torch.sqrt(rmse_log.mean())
 
         abs_rel = torch.mean(torch.abs(gt - pred) / gt)
@@ -43,7 +45,8 @@ def compute_errors(gt, pred):
         rmse = (gt - pred) ** 2
         rmse = np.sqrt(rmse.mean())
 
-        rmse_log = (np.log10(gt) - np.log10(pred)) ** 2
+        log = np.log10 if use_log10 else np.log
+        rmse_log = (log(gt) - log(pred)) ** 2
         rmse_log = np.sqrt(rmse_log.mean())
 
         abs_rel = np.mean(np.abs(gt - pred) / gt)

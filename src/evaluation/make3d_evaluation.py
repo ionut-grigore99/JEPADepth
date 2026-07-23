@@ -4,9 +4,9 @@ NOTE: In order to check the correctness of this evaluation code, please compare 
 Expected results when evaluating Monodepth2 model with 640x192 pretrained weights are:
 
 |  abs_rel |   sq_rel |     rmse | rmse_log | 
-|    0.321 |    3.377 |    7.252 |    0.375 | 
+|    0.321 |    3.377 |    7.252 |    0.163 | 
 
-@NOTE: The results may slightly vary depending on the environment and library versions. I also replaced "log" with "rmse_log" in the printed table header to be consistent with other parts of the code.
+@NOTE: The results may slightly vary depending on the environment and library versions. 
 @NOTE: The reported metrics correspond to evaluating the model at the same resolution it was trained on.
 '''
 
@@ -124,7 +124,7 @@ def evaluate(conf):
             depth_pred = depth_pred_rescaled[mask]
             depth_pred *= np.median(depth_gt) / np.median(depth_pred)
             depth_pred[depth_pred > MAX_DEPTH] = MAX_DEPTH
-            errors.append(compute_errors(depth_gt, depth_pred)[:4])
+            errors.append(compute_errors(depth_gt, depth_pred, use_log10=True)[:4])
 
             # Collect sample images for HTML report (every N images to get good distribution)
             if len(sample_images) < max_samples and i % max(1, len(images) // max_samples) == 0:
