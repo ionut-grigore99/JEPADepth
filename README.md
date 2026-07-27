@@ -354,15 +354,6 @@ Our implementation integrates I-JEPA's masked prediction approach with tradition
 
 **For an intuitive explanation of JEPA, watch** [this excellent video](https://www.youtube.com/watch?v=6bJIkfi8H-E)
 
-## Local overfit
-
-The goal was to see if the JEPADepth architecture could be overfit on a small batch of samples—typically one, two, or five images.
-The ability to overfit is a litmus test for model capacity, and visual aids, such as the rendering of predicted depth maps, were instrumental in evaluating the success. 
-If overfitting was achieved with satisfactory visual confirmation, the next logical step involved deploying the entire training pipeline, utilizing the full dataset.
-```bash
-python -m src.overfit.local_trainer
-```
-
 ## Jupyter notebooks
 
 You can also find some useful jupyter notebooks which have the purpose of illustrating the functionality of main parts of this project.

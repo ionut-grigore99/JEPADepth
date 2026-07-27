@@ -13,3 +13,4 @@ weights/
 htmls/
 src/inference/output_images/
 notebooks/.ipynb_checkpoints
+experiments_comparison.md
