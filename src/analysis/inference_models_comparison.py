@@ -58,7 +58,9 @@ MODELS_TO_COMPARE = [
         "decoder_weights_path": None,
         "weights_path": "tensorboard/train/dino/20260228-224926/models/weights_epoch_19/depth_model.pth",
         "scales": [0, 1, 2, 3],
-        "decoder_type": "fpn"
+        "decoder_type": "fpn",
+        "use_lora": False,
+        "lora_rank": 16
     },
     {
         "display_name": "JEPADepth (ours)",
@@ -69,7 +71,9 @@ MODELS_TO_COMPARE = [
         "decoder_weights_path": "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/depth_decoder.pth",
         "weights_path": None,
         "scales": [0, 1, 2, 3],
-        "decoder_type": "fpn"
+        "decoder_type": "fpn",
+        "use_lora": False,
+        "lora_rank": 16
     },
     # Add more models here following the same pattern
 ]
