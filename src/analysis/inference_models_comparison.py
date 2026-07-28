@@ -190,6 +190,8 @@ def load_model(model_cfg: dict, device: torch.device):
             model_cfg["decoder_channels"],
             model_cfg["scales"],
             model_cfg["decoder_type"],
+            use_lora=model_cfg["use_lora"],
+            lora_rank=model_cfg["lora_rank"],
         )
         model.from_pretrained(
             encoder_weights_path=model_cfg["encoder_weights_path"],

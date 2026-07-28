@@ -33,7 +33,9 @@ dino:
   encoder_size: "small" # choices=["small", "base", "large"]
   decoder_channels: 256
   decoder_type: "fpn" # choices=["fpn", "dpt"] 
-  freeze_encoder: False # if set, freezes the DINOv3 encoder during training (only trains the decoder). Ignored when use_jepa=True.
+  freeze_encoder: False # if set, freezes the DINOv3 encoder during training (only trains the decoder).
+  use_lora: True # if set, injects LoRA adapters into the DINOv3 encoder attention (Q,V) and freezes the backbone (only adapters + decoder train). 
+  lora_rank: 16 # rank of the LoRA adapters.
   encoder_weights_path: "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/context_encoder.pth"
   decoder_weights_path: "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/depth_decoder.pth"
   weights_path: "tensorboard/train/dino/20260228-224926/models/weights_epoch_19/depth_model.pth" # if set, will load the entire model from this path instead of loading encoder and decoder separately (used for non-JEPA models where encoder and decoder are not saved separately).
@@ -121,7 +123,7 @@ jepa:
   encoder_weights_path: "weights/dino/dinov3_vits16.pth"  # Path to pretrained DINOv3 weights
 
   # Decoder configuration
-  decoder_type: "dpt"  # choices: ["fpn", "dpt"]
+  decoder_type: "fpn"  # choices: ["fpn", "dpt"]
   depth_decoder_channels: 256  # Number of channels in the depth decoder (after lateral projections)
   
   # Training configuration

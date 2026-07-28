@@ -61,7 +61,7 @@ class Trainer:
                 self.models["depth_model"] = DPTDepth(self.conf['pixio']['encoder'], self.conf['pixio']['pretrained_ckp'], scales=self.conf['pixio']['scales'])
                 self.models["depth_model"].from_pretrained(weights_path=self.conf['pixio']['weights_path'], device=self.device) if self.conf['load_pretrained_depth_model'] else None
             elif self.conf['model_name'].startswith("dino"):
-                self.models["depth_model"] = DINODepth(self.conf['dino']['encoder_size'], self.conf['dino']['decoder_channels'], self.conf['dino']['scales'], decoder_type=self.conf['dino']['decoder_type'])
+                self.models["depth_model"] = DINODepth(self.conf['dino']['encoder_size'], self.conf['dino']['decoder_channels'], self.conf['dino']['scales'], decoder_type=self.conf['dino']['decoder_type'], use_lora=self.conf['dino'].get('use_lora', False), lora_rank=self.conf['dino'].get('lora_rank', 4))
                 self.models["depth_model"].from_pretrained(encoder_weights_path=self.conf['dino']['encoder_weights_path'], decoder_weights_path=self.conf['dino']['decoder_weights_path'], device=self.device) if self.conf['load_pretrained_depth_model'] else None
             elif self.conf['model_name'] == "monodepth2":
                 self.models["depth_model"] = MonoDepth2(num_layers=self.conf['monodepth2']['num_layers'], pretrained=self.conf['monodepth2']['pretrained'], scales=self.conf['monodepth2']['scales'])
@@ -72,7 +72,10 @@ class Trainer:
             self.models["depth_model"] = self.models["depth_model"].to(self.device)
 
             # Freeze DINOv3 encoder if requested (non-JEPA only — decoder always trains)
-            if self.conf['model_name'].startswith("dino") and self.conf['dino']['freeze_encoder']:
+            if self.conf['model_name'].startswith("dino") and self.conf['dino']['use_lora']:
+                self.parameters_to_train += [p for p in self.models["depth_model"].parameters() if p.requires_grad]
+                print("DINOv3 encoder frozen with LoRA adapters — training LoRA adapters + decoder only.")
+            elif self.conf['model_name'].startswith("dino") and self.conf['dino']['freeze_encoder']:
                 for param in self.models["depth_model"].encoder.parameters():
                     param.requires_grad = False
                 self.parameters_to_train += list(self.models["depth_model"].decoder.parameters())
