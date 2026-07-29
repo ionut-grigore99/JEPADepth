@@ -34,7 +34,7 @@ dino:
   decoder_channels: 256
   decoder_type: "fpn" # choices=["fpn", "dpt"] 
   freeze_encoder: False # if set, freezes the DINOv3 encoder during training (only trains the decoder).
-  use_lora: True # if set, injects LoRA adapters into the DINOv3 encoder attention (Q,V) and freezes the backbone (only adapters + decoder train). 
+  use_lora: False # if set, injects LoRA adapters into the DINOv3 encoder attention (Q,V) and freezes the backbone (only adapters + decoder train). 
   lora_rank: 16 # rank of the LoRA adapters.
   encoder_weights_path: "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/context_encoder.pth"
   decoder_weights_path: "tensorboard/train/jepa_small/20260220-112633/models/weights_epoch_19/depth_decoder.pth"
