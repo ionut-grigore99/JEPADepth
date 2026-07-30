@@ -2,7 +2,9 @@
 
 
 ## Introduction
-This is the implementation of the paper called "*JEPADepth: Predictive Representation Learning for Self-Supervised Monocular Depth Estimation*".
+This repository contains the official implementation of the paper "*JEPADepth: Predictive Representation Learning for Self-Supervised Monocular Depth Estimation*".
+<br />
+📄 **Paper:** https://arxiv.org/abs/2607.26600  
 <br />
 <br />
 
@@ -14,7 +16,7 @@ If you find our work useful in your research please consider citing our paper:
 @article{grigore2026jepadepth,
   title={JEPADepth: Predictive Representation Learning for Self-Supervised Monocular Depth Estimation},
   author={Grigore, Ionuț and Popa, Călin-Adrian},
-  journal={arXiv preprint arXiv:...},
+  journal={arXiv preprint arXiv:2607.26600},
   year={2026}
 }
 ```
