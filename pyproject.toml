@@ -9,7 +9,7 @@ authors = [
     { name = "Ionut-Orlando Grigore-Atimut", email = "ionut.grigore@cs.upt.ro" }
 ]
 
-description = "JEPADepth: Some title I need to think."
+description = "JEPADepth: Masked Predictive Representation Learning for Self-Supervised Monocular Depth Estimation."
 readme = "README.md"
 requires-python = ">=3.8"
 

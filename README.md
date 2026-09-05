@@ -2,7 +2,7 @@
 
 
 ## Introduction
-This repository contains the official implementation of the paper "*JEPADepth: Predictive Representation Learning for Self-Supervised Monocular Depth Estimation*".
+This repository contains the official implementation of the paper "*JEPADepth: Masked Predictive Representation Learning for Self-Supervised Monocular Depth Estimation*".
 <br />
 📄 **Paper:** https://arxiv.org/abs/2607.26600  
 <br />
