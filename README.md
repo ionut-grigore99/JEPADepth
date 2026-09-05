@@ -14,8 +14,8 @@ If you find our work useful in your research please consider citing our paper:
 
 ```
 @article{grigore2026jepadepth,
-  title={JEPADepth: Predictive Representation Learning for Self-Supervised Monocular Depth Estimation},
-  author={Grigore, Ionuț and Popa, Călin-Adrian},
+  title={JEPADepth: Masked Predictive Representation Learning for Self-Supervised Monocular Depth Estimation},
+  author={Grigore, Ionu{\c{t}} and Popa, C{\u{a}}lin-Adrian},
   journal={arXiv preprint arXiv:2607.26600},
   year={2026}
 }
