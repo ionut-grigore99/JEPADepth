@@ -1023,15 +1023,23 @@ def create_evaluation_html_report(dataset, mean_errors, conf, num_images, sample
     model_config_items_html = ""
     model_config = {}
     
-    if conf['model_name'].startswith("pixio"):
+    if conf['model_name'].startswith("dino"):
         model_config = {
             "Model Name": format_model_name(conf['model_name']),
             "Number of Parameters": format_number(num_parameters),
-            "Encoder": conf['pixio']['encoder'],
-            "Pretrained Checkpoint": conf['pixio']['pretrained_ckp'] if conf['pixio']['pretrained_ckp'] else "None",
-            "Weights Path": conf['pixio']['weights_path'],
-            "Scales": str(conf['pixio']['scales']),
+            "Encoder Size": conf['dino']['encoder_size'],
+            "Decoder Type": conf['dino']['decoder_type'],
+            "Scales": str(conf['dino']['scales']),
         }
+        if conf['use_jepa_training']:
+            model_config.update({
+            "Encoder Weights Path": conf['dino']['encoder_weights_path'],
+            "Decoder Weights Path": conf['dino']['decoder_weights_path'],
+            })
+        else:
+            model_config.update({
+            "Weights Path": conf['dino']['weights_path'],
+            })
     elif conf['model_name'] == "monodepth2":
         model_config = {
             "Model Name": format_model_name(conf['model_name']),
