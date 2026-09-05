@@ -11,7 +11,7 @@ from datetime import datetime
 from io import BytesIO
 from torchvision import transforms
 
-from src.models.pixio.dpt import DPTDepth
+from src.models.dinov3.dino import DINODepth
 from src.models.monodepth2.monodepth2 import MonoDepth2
 from src.utils import disp_to_depth, count_parameters, format_number, image_to_base64, numpy_to_base64, format_model_name
 from src.config.conf import Conf
@@ -708,13 +708,21 @@ def create_html_report(results, html_directory, conf, num_parameters=0, avg_infe
     }
     
     # Add model-specific configuration
-    if conf['model_name'].startswith("pixio"):
+    if conf['model_name'].startswith("dino"):
         config_display.update({
-            "Encoder": conf['pixio']['encoder'],
-            "Pretrained Checkpoint": conf['pixio'].get('pretrained_ckp', 'None'),
-            "Weights Path": conf['pixio'].get('weights_path', 'None'),
-            "Scales": str(conf['pixio']['scales']),
+            "Encoder Size": conf['dino']['encoder_size'],
+            "Decoder Type": conf['dino']['decoder_type'],
+            "Scales": str(conf['dino']['scales']),
         })
+        if conf['use_jepa_training']:
+            config_display.update({
+            "Encoder Weights Path": conf['dino']['encoder_weights_path'],
+            "Decoder Weights Path": conf['dino']['decoder_weights_path'],
+            })
+        else:
+            config_display.update({
+            "Weights Path": conf['dino']['weights_path'],
+            })
     elif conf['model_name'] == "monodepth2":
         config_display.update({
             "ResNet Layers": conf['monodepth2']['num_layers'],
@@ -827,9 +835,9 @@ def test_simple(conf):
     model_input_width = conf['im_sz'][1]
 
     # Preparing model
-    if conf['model_name'].startswith("pixio"):
-        model = DPTDepth(conf['pixio']['encoder'], conf['pixio']['pretrained_ckp'], conf['pixio']['scales'])
-        model.from_pretrained(weights_path=conf['pixio']['weights_path'], device=device)
+    if conf['model_name'].startswith("dino"):
+        model = DINODepth(conf['dino']['encoder_size'], conf['dino']['decoder_channels'], scales=conf['dino']['scales'], decoder_type=conf['dino']['decoder_type'], use_lora=conf['dino']['use_lora'], lora_rank=conf['dino']['lora_rank'])
+        model.from_pretrained(encoder_weights_path=conf['dino']['encoder_weights_path'], decoder_weights_path=conf['dino']['decoder_weights_path'], weights_path=conf['dino']['weights_path'], device=device)
     elif conf['model_name'] == "monodepth2":
         model = MonoDepth2(num_layers=conf['monodepth2']['num_layers'], pretrained=conf['monodepth2']['pretrained'], scales=conf['monodepth2']['scales'])
         model.from_pretrained(encoder_weights_path=conf['monodepth2']['encoder_weights_path'], decoder_weights_path=conf['monodepth2']['decoder_weights_path'], device=device)

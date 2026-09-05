@@ -307,10 +307,7 @@ def format_model_name(model_name):
     """Format model name for display (e.g., 'monodepth2' -> 'MonoDepth2')"""
     model_name_map = {
         'monodepth2': 'MonoDepth2',
-        'pixio': 'Pixio',
-        'pixio_vitb16': 'Pixio ViT-B/16',
-        'pixio_vitl16': 'Pixio ViT-L/16',
-        'pixio_vith16': 'Pixio ViT-H/16',
+        'dino': 'DINOv3',
     }
     return model_name_map.get(model_name, model_name.title())
 
